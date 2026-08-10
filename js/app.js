@@ -602,7 +602,7 @@
     if (!entry || !conf || (entry.ai && entry.ai.state === "loading")) return;
     entry.ai = { state: "loading" };
     render();
-    var model = conf.geminiModel || "gemini-2.5-flash";
+    var model = conf.geminiModel || "gemini-flash-latest";
     fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model +
           ":generateContent?key=" + encodeURIComponent(conf.geminiKey), {
       method: "POST",
