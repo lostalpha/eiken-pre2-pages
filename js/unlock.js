@@ -120,7 +120,7 @@
         '<div class="card"><p>このブラウザでは開けません（暗号化機能に未対応）。https でアクセスしてください。</p></div>';
       return;
     }
-    fetch("data/exams.enc?v=5e445835a1")
+    fetch("data/exams.enc?v=461d40dbe3")
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();

@@ -1788,14 +1788,21 @@
     }
     if (q.translation) html += "<h4>和訳</h4><p>" + esc(q.translation) + "</p>";
     if (q.explanation) html += "<h4>解説</h4><p>" + esc(q.explanation) + "</p>";
-    // 誤答選択肢ごとの解説（データにあれば表示）
-    if (q.choice_explanations) {
-      html += "<h4>ほかの選択肢はなぜちがう？</h4><div class=\"choice-notes\">";
+    // 選択肢ごとの和訳と、不正解の理由
+    if (q.choice_translations || q.choice_explanations) {
+      html += "<h4>選択肢のかくにん</h4><div class=\"choice-notes\">";
       (q.choices || []).forEach(function (c) {
-        var note = q.choice_explanations[c.label];
-        if (!note) return;
-        html += '<div class="choice-note"><span class="cn-label">' + esc(c.label) + "</span>" +
-          "<span>" + esc(note) + "</span></div>";
+        var tr = q.choice_translations && q.choice_translations[c.label];
+        var note = q.choice_explanations && q.choice_explanations[c.label];
+        var isAns = c.label === q.answer;
+        html += '<div class="choice-note' + (isAns ? " is-answer" : "") + '">' +
+          '<span class="cn-label">' + esc(c.label) + "</span>" +
+          '<div class="cn-body">' +
+          '<div class="cn-text">' + esc(c.text) + "</div>" +
+          (tr ? '<div class="cn-tr">' + esc(tr) + "</div>" : "") +
+          (isAns ? '<div class="cn-why ok">⭕ これが正解</div>'
+                 : note ? '<div class="cn-why">' + esc(note) + "</div>" : "") +
+          "</div></div>";
       });
       html += "</div>";
     }

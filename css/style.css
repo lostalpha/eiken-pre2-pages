@@ -242,17 +242,25 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   font-weight: 800; border-radius: 6px; padding: 0 3px;
 }
 
-.choice-notes { display: flex; flex-direction: column; gap: 6px; }
+.choice-notes { display: flex; flex-direction: column; gap: 8px; }
 .choice-note {
   display: flex; gap: 8px; align-items: flex-start;
   font-size: 13px; color: var(--ink);
+  background: rgba(255, 255, 255, 0.55); border-radius: 10px; padding: 8px 10px;
 }
+.choice-note.is-answer { background: var(--good-soft); }
 .choice-note .cn-label {
   width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--bg); font-size: 11px; font-weight: 700; color: var(--sub);
   margin-top: 2px;
 }
+.choice-note.is-answer .cn-label { background: var(--good); color: #fff; }
+.choice-note .cn-body { flex: 1; min-width: 0; }
+.choice-note .cn-text { font-weight: 600; }
+.choice-note .cn-tr { color: var(--sub); margin-top: 1px; }
+.choice-note .cn-why { margin-top: 3px; color: var(--bad); line-height: 1.6; }
+.choice-note .cn-why.ok { color: var(--good); font-weight: 700; }
 
 .writing-area {
   width: 100%; min-height: 150px; padding: 12px; font-size: 15px;
