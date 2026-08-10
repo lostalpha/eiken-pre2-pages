@@ -372,3 +372,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .sp-model { font-size: 13.5px; margin-top: 6px; line-height: 1.7; }
 .sp-review-item h2 { margin-bottom: 4px; }
 .sp-grade button.selected { outline: 3px solid currentColor; }
+.sp-picture img { display: block; width: 100%; height: auto; }
+.sp-pic-pending {
+  padding: 24px 16px; text-align: center; font-size: 13px; color: var(--sub);
+  line-height: 1.8; background: var(--bg);
+}

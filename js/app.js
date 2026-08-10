@@ -53,6 +53,23 @@
         });
       });
     });
+    // 初期表示タブ: 筆記・リスニングがある最初の回（面接のみの回はとばす）
+    for (var i = 0; i < EXAMS.length; i++) {
+      if (EXAMS[i].sections.some(function (s) { return s.kind !== "speaking"; })) {
+        state.examIdx = i;
+        break;
+      }
+    }
+  }
+
+  // 全回ミックスの土台にする回（筆記・リスニングのセクションが最も多い回）
+  function mixBaseExam() {
+    var best = EXAMS[0], bestN = -1;
+    EXAMS.forEach(function (ex) {
+      var n = ex.sections.filter(function (s) { return s.kind !== "speaking"; }).length;
+      if (n > bestN) { best = ex; bestN = n; }
+    });
+    return best;
   }
 
   function examId(ex) { return ex.exam.id || (ex.exam.year + "-" + ex.exam.session); }
@@ -489,9 +506,9 @@
     shuffle(refs); // 出題順もばらす
 
     var title = "";
-    for (var i = 0; i < EXAMS[0].sections.length; i++) {
-      if (EXAMS[0].sections[i].id === sectionId) title = EXAMS[0].sections[i].title;
-    }
+    mixBaseExam().sections.forEach(function (sec2) {
+      if (sec2.id === sectionId) title = sec2.title;
+    });
     state.session = buildSession("mix", sectionId, refs, "全回ミックス " + title);
     state.screen = "quiz";
     render();
@@ -1072,8 +1089,31 @@
     return "";
   }
 
+  // カードの絵: インラインSVG → 画像ファイル(暗号化対応) → 準備中 の順で表示
+  function spPicture(card, which) {
+    var svg = card[which];
+    if (svg) return '<div class="sp-picture">' + svg + "</div>";
+    var rel = card[which + "_img"];
+    if (rel) {
+      return '<div class="sp-picture"><img class="sp-img" alt="問題カードの絵" data-img-rel="' + esc(rel) + '"></div>';
+    }
+    return '<div class="sp-picture sp-pic-pending">🖼️ この回の絵はじゅんび中だよ。<br>テキスト（過去問の本）の問題カードの絵を見ながら答えてね。</div>';
+  }
+
+  // data-img-rel の画像を非同期で読み込む（公開版は復号してobjectURLにする）
+  function hydrateImages() {
+    var imgs = document.querySelectorAll("img[data-img-rel]");
+    Array.prototype.forEach.call(imgs, function (img) {
+      var rel = img.getAttribute("data-img-rel");
+      img.removeAttribute("data-img-rel");
+      resolveAudioUrl(rel)
+        .then(function (url) { img.src = url; })
+        .catch(function () { img.style.display = "none"; });
+    });
+  }
+
   function spCardBox(which) {
-    // which: "passage" | "pictureA" | "pictureB" | null
+    // which: "passage" | "pictureA" | "pictureB" | "all"
     var card = state.sp.card;
     var html = '<div class="sp-card">';
     if (which === "passage" || which === "all") {
@@ -1081,10 +1121,10 @@
         '<div class="sp-passage">' + esc(card.passage) + "</div>";
     }
     if (which === "pictureA" || which === "all") {
-      html += '<div class="sp-pic-label">Picture A</div><div class="sp-picture">' + card.pictureA + "</div>";
+      html += '<div class="sp-pic-label">Picture A</div>' + spPicture(card, "pictureA");
     }
     if (which === "pictureB" || which === "all") {
-      html += '<div class="sp-pic-label">Picture B</div><div class="sp-picture">' + card.pictureB + "</div>";
+      html += '<div class="sp-pic-label">Picture B</div>' + spPicture(card, "pictureB");
     }
     html += "</div>";
     return html;
@@ -1162,7 +1202,7 @@
         '<p class="sp-note-strong">🎧 No.' + q.no + ' の質問をきいて、声で答えよう</p>' +
         '<div class="sp-rec-row">' +
         '<button class="btn ghost" data-action="sp-play" data-rel="' + esc(q.audio) + '" data-fallback="' + esc(q.text) + '">▶ 質問をきく</button>' +
-        (q.follow_audio ? '<button class="btn ghost" data-action="sp-play" data-rel="' + esc(q.follow_audio) + '">▶ つづきの質問</button>' : "") +
+        (q.follow_audio ? '<button class="btn ghost" data-action="sp-play" data-rel="' + esc(q.follow_audio) + '">▶ Noのときの質問</button>' : "") +
         "</div>" +
         (q.tip ? '<p class="sp-tip">💡 ' + esc(q.tip) + "</p>" : "") +
         '<button class="passage-toggle" data-action="sp-text-toggle">' +
@@ -1334,7 +1374,10 @@
       case "result": app.innerHTML = viewResult(); break;
       case "records": app.innerHTML = viewRecords(); break;
       case "spSelect": app.innerHTML = viewSpSelect(); break;
-      case "spFlow": app.innerHTML = viewSpFlow(); break;
+      case "spFlow":
+        app.innerHTML = viewSpFlow();
+        hydrateImages();
+        break;
     }
     window.scrollTo(0, 0);
   }
@@ -1412,10 +1455,11 @@
     }
 
     // セクション一覧
-    var baseEx = isMix ? EXAMS[0] : EXAMS[state.examIdx];
+    var baseEx = isMix ? mixBaseExam() : EXAMS[state.examIdx];
     var exId = isMix ? "mix" : examId(baseEx);
     html += '<div class="section-list">';
     baseEx.sections.forEach(function (sec) {
+      if (isMix && sec.kind === "speaking") return; // 面接はミックス対象外
       var last = lastScoreFor(state.userId, exId, sec.id);
       var badge;
       if (last) {
