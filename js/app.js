@@ -55,8 +55,8 @@
     });
   }
 
-  function examId(ex) { return ex.exam.year + "-" + ex.exam.session; }
-  function examLabel(ex) { return ex.exam.year + "年度 第" + ex.exam.session + "回"; }
+  function examId(ex) { return ex.exam.id || (ex.exam.year + "-" + ex.exam.session); }
+  function examLabel(ex) { return ex.exam.label || (ex.exam.year + "年度 第" + ex.exam.session + "回"); }
 
   // ---------- ストレージ ----------
   function load(key, fallback) {
@@ -80,6 +80,92 @@
   }
   function getSettings(userId) { return load("settings." + userId, { timerMode: "soft" }); }
   function setSettings(userId, s) { save("settings." + userId, s); }
+
+  // ---------- バックアップ ----------
+  function exportBackup() {
+    var users = getUsers();
+    if (!users.length) { alert("まだユーザーがいないので、ほぞんするきろくがありません。"); return; }
+    var payload = {
+      app: "eikenPre2", kind: "backup", version: 1,
+      exportedAt: new Date().toISOString(),
+      users: users, records: {}, settings: {}
+    };
+    users.forEach(function (u) {
+      payload.records[u.id] = getRecords(u.id);
+      payload.settings[u.id] = getSettings(u.id);
+    });
+    var d = new Date();
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    var name = "eiken-kiroku-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".json";
+    var blob = new Blob([JSON.stringify(payload, null, 1)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  function importBackup() {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var data;
+        try { data = JSON.parse(reader.result); } catch (e) { data = null; }
+        if (!data || data.app !== "eikenPre2" || !Array.isArray(data.users)) {
+          alert("このファイルはバックアップではないみたい。よみこめませんでした。");
+          return;
+        }
+        var summary = mergeBackup(data);
+        alert("よみこみました！\n" + summary);
+        render();
+      };
+      reader.readAsText(f);
+    };
+    input.click();
+  }
+
+  // バックアップを現在のデータに合流させる。既存の記録は消さず、無いものだけ足す
+  function mergeBackup(data) {
+    var users = getUsers();
+    var byId = {};
+    users.forEach(function (u) { byId[u.id] = true; });
+    var addedUsers = 0, addedRecs = 0;
+    data.users.forEach(function (u) {
+      if (!u || !u.id || !u.name) return;
+      if (!byId[u.id]) {
+        users.push({ id: u.id, name: String(u.name).slice(0, 10), emoji: u.emoji || EMOJIS[0] });
+        byId[u.id] = true;
+        addedUsers++;
+      }
+      var recs = getRecords(u.id);
+      var seen = {};
+      recs.forEach(function (r) { seen[JSON.stringify(r)] = true; });
+      var incoming = (data.records && data.records[u.id]) || [];
+      if (Array.isArray(incoming)) {
+        incoming.forEach(function (r) {
+          if (!r || typeof r !== "object") return;
+          var k = JSON.stringify(r);
+          if (!seen[k]) { recs.push(r); seen[k] = true; addedRecs++; }
+        });
+      }
+      recs.sort(function (a, b) { return (a.date || 0) - (b.date || 0); });
+      if (recs.length > 300) recs = recs.slice(recs.length - 300);
+      save("records." + u.id, recs);
+      // 設定はこの端末に無いユーザーのぶんだけ取り込む
+      if (localStorage.getItem(STORE_PREFIX + "settings." + u.id) === null &&
+          data.settings && data.settings[u.id]) {
+        setSettings(u.id, data.settings[u.id]);
+      }
+    });
+    setUsers(users);
+    return "ユーザー " + addedUsers + "人、きろく " + addedRecs + "件をついかしました。";
+  }
 
   // ---------- 状態 ----------
   var state = {
@@ -510,9 +596,12 @@
     html += '<button class="user-card add" data-action="add-user">' +
       '<span class="avatar">➕</span><span class="name">ついか</span></button>';
     html += "</div>";
+    html += '<div class="user-manage">';
     if (users.length) {
-      html += '<div class="user-manage"><button data-action="manage-users">ユーザーをけす</button></div>';
+      html += '<button data-action="manage-users">ユーザーをけす</button>' +
+        '<button data-action="export-backup">きろくをほぞん</button>';
     }
+    html += '<button data-action="import-backup">きろくをよみこむ</button></div>';
     return html;
   }
 
@@ -874,6 +963,8 @@
         }
         break;
       }
+      case "export-backup": exportBackup(); break;
+      case "import-backup": importBackup(); break;
       case "to-users": state.screen = "users"; render(); break;
       case "to-home": state.screen = "home"; render(); break;
       case "to-records": state.screen = "records"; render(); break;

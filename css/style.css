@@ -74,7 +74,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .user-card .stat { font-size: 12px; color: var(--sub); margin-top: 4px; }
 .user-card.add { border: 2px dashed var(--line); background: transparent; box-shadow: none; color: var(--sub); }
 .user-manage { text-align: center; margin-top: 20px; }
-.user-manage button { color: var(--sub); font-size: 13px; text-decoration: underline; }
+.user-manage button { color: var(--sub); font-size: 13px; text-decoration: underline; margin: 0 10px; }
 
 /* ---------- フォーム ---------- */
 .form-row { margin-bottom: 14px; }
