@@ -1,0 +1,288 @@
+:root {
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --ink: #253044;
+  --sub: #6b7688;
+  --line: #e3e8f0;
+  --accent: #3b6fe0;
+  --accent-soft: #e8effd;
+  --good: #2aa06b;
+  --good-soft: #e3f5ec;
+  --bad: #d94f4f;
+  --bad-soft: #fdeaea;
+  --warn: #e08a1e;
+  --warn-soft: #fdf3e2;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(30, 45, 80, 0.08), 0 4px 14px rgba(30, 45, 80, 0.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+#app { max-width: 760px; margin: 0 auto; padding: 16px 14px 60px; }
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+
+.hidden { display: none !important; }
+
+/* ---------- ヘッダー ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; min-height: 44px;
+}
+.topbar .back-btn {
+  font-size: 15px; color: var(--accent); font-weight: 600;
+  padding: 8px 10px 8px 0; flex-shrink: 0;
+}
+.topbar .title { font-size: 17px; font-weight: 700; flex: 1; }
+.topbar .user-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px 4px 6px;
+  font-size: 14px; font-weight: 600; box-shadow: var(--shadow);
+}
+.topbar .user-chip .avatar { font-size: 20px; }
+
+/* ---------- カード ---------- */
+.card {
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 18px; margin-bottom: 14px;
+}
+.card h2 { font-size: 16px; margin-bottom: 12px; }
+.card .note { font-size: 13px; color: var(--sub); }
+
+/* ---------- ユーザー選択 ---------- */
+.app-title { text-align: center; margin: 30px 0 4px; font-size: 24px; font-weight: 800; }
+.app-sub { text-align: center; color: var(--sub); font-size: 14px; margin-bottom: 28px; }
+.user-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+.user-card {
+  width: 150px; padding: 22px 10px; text-align: center;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  border: 2px solid transparent; transition: transform .1s;
+}
+.user-card:active { transform: scale(0.97); }
+.user-card .avatar { font-size: 44px; display: block; margin-bottom: 8px; }
+.user-card .name { font-size: 16px; font-weight: 700; }
+.user-card .stat { font-size: 12px; color: var(--sub); margin-top: 4px; }
+.user-card.add { border: 2px dashed var(--line); background: transparent; box-shadow: none; color: var(--sub); }
+.user-manage { text-align: center; margin-top: 20px; }
+.user-manage button { color: var(--sub); font-size: 13px; text-decoration: underline; }
+
+/* ---------- フォーム ---------- */
+.form-row { margin-bottom: 14px; }
+.form-row label { display: block; font-size: 13px; font-weight: 600; color: var(--sub); margin-bottom: 6px; }
+.form-row input[type="text"] {
+  width: 100%; padding: 10px 12px; font-size: 16px;
+  border: 1px solid var(--line); border-radius: 10px; font-family: inherit;
+}
+.emoji-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.emoji-picker button {
+  font-size: 26px; width: 48px; height: 48px; border-radius: 12px;
+  border: 2px solid var(--line); background: var(--card);
+}
+.emoji-picker button.selected { border-color: var(--accent); background: var(--accent-soft); }
+
+.btn {
+  display: inline-block; padding: 12px 22px; border-radius: 12px;
+  font-size: 15px; font-weight: 700; text-align: center;
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.btn.primary:disabled { opacity: 0.4; cursor: default; }
+.btn.ghost { background: var(--accent-soft); color: var(--accent); }
+.btn.danger { background: var(--bad-soft); color: var(--bad); }
+.btn.block { display: block; width: 100%; }
+.btn + .btn { margin-top: 10px; }
+
+/* ---------- ホーム ---------- */
+.seg {
+  display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px;
+}
+.seg button {
+  flex: 1; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--sub);
+}
+.seg button.selected { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+.seg-help { font-size: 12px; color: var(--sub); margin-top: 8px; }
+
+.exam-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
+.exam-tabs button {
+  flex-shrink: 0; padding: 8px 14px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; color: var(--sub);
+}
+.exam-tabs button.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.mix-note { font-size: 12px; color: var(--sub); margin: -4px 2px 10px; }
+
+.section-list { display: flex; flex-direction: column; gap: 10px; }
+.section-item {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px 16px; width: 100%;
+}
+.section-item:active { transform: scale(0.99); }
+.section-item .icon {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 21px;
+  background: var(--accent-soft);
+}
+.section-item .body { flex: 1; min-width: 0; }
+.section-item .name { font-size: 15px; font-weight: 700; }
+.section-item .meta { font-size: 12px; color: var(--sub); }
+.section-item .score-badge {
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
+  padding: 4px 10px; border-radius: 999px;
+}
+.score-badge.good { background: var(--good-soft); color: var(--good); }
+.score-badge.mid { background: var(--warn-soft); color: var(--warn); }
+.score-badge.bad { background: var(--bad-soft); color: var(--bad); }
+.score-badge.none { background: var(--bg); color: var(--sub); font-weight: 600; }
+
+.home-links { display: flex; gap: 10px; margin-top: 16px; }
+.home-links .btn { flex: 1; }
+
+/* ---------- 出題画面 ---------- */
+.quiz-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.quiz-head .progress { font-size: 14px; font-weight: 700; color: var(--sub); flex: 1; }
+.quiz-quit { color: var(--sub); font-size: 13px; padding: 6px; }
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px; font-weight: 800; padding: 4px 12px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.timer.low { background: var(--warn-soft); color: var(--warn); }
+.timer.over { background: var(--bad-soft); color: var(--bad); }
+
+.progress-bar { height: 5px; background: var(--line); border-radius: 3px; margin-bottom: 16px; overflow: hidden; }
+.progress-bar > div { height: 100%; background: var(--accent); border-radius: 3px; transition: width .25s; }
+
+.passage-box {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 16px; margin-bottom: 14px; font-size: 15px;
+}
+.passage-box .p-title { font-weight: 700; margin-bottom: 8px; font-size: 15px; }
+.passage-box .p-body { white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+.passage-toggle { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 8px; }
+
+.question-box {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 18px; margin-bottom: 14px;
+}
+.question-box .q-instruction { font-size: 12px; color: var(--sub); margin-bottom: 10px; }
+.question-box .q-prompt { font-size: 16px; white-space: pre-wrap; }
+
+.listen-panel { text-align: center; padding: 8px 0; }
+.listen-panel .listen-note { font-size: 13px; color: var(--sub); margin-bottom: 12px; }
+.play-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700;
+  padding: 12px 26px; border-radius: 999px;
+}
+.play-btn.playing { background: var(--warn); }
+
+.choices { display: flex; flex-direction: column; gap: 10px; }
+.choice {
+  display: flex; align-items: flex-start; gap: 12px; text-align: left;
+  background: var(--card); border: 2px solid var(--line); border-radius: 12px;
+  padding: 13px 14px; font-size: 15px; width: 100%; line-height: 1.5;
+}
+.choice .label {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); font-size: 13px; font-weight: 700; color: var(--sub);
+  margin-top: 1px;
+}
+.choice:not(:disabled):active { border-color: var(--accent); }
+.choice.correct { border-color: var(--good); background: var(--good-soft); }
+.choice.correct .label { background: var(--good); color: #fff; }
+.choice.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.choice.wrong .label { background: var(--bad); color: #fff; }
+.choice:disabled { opacity: 0.92; cursor: default; }
+
+.feedback {
+  border-radius: var(--radius); padding: 16px; margin-top: 14px;
+  background: var(--card); box-shadow: var(--shadow);
+  border-top: 4px solid var(--good);
+}
+.feedback.wrong { border-top-color: var(--bad); }
+.feedback .verdict { font-size: 17px; font-weight: 800; margin-bottom: 10px; }
+.feedback.wrong .verdict { color: var(--bad); }
+.feedback:not(.wrong) .verdict { color: var(--good); }
+.feedback h4 {
+  font-size: 12px; color: var(--sub); margin: 12px 0 4px;
+  letter-spacing: 0.05em;
+}
+.feedback p { font-size: 14px; white-space: pre-wrap; }
+.feedback .script { font-size: 14px; white-space: pre-wrap; color: var(--ink); }
+
+.writing-area {
+  width: 100%; min-height: 150px; padding: 12px; font-size: 15px;
+  border: 1px solid var(--line); border-radius: 10px; font-family: inherit;
+  resize: vertical; line-height: 1.6;
+}
+.self-grade { display: flex; gap: 10px; margin-top: 12px; }
+.self-grade button {
+  flex: 1; padding: 12px 6px; border-radius: 12px; font-size: 14px; font-weight: 700;
+  border: 2px solid var(--line); background: var(--card);
+}
+.self-grade button.g2 { color: var(--good); }
+.self-grade button.g1 { color: var(--warn); }
+.self-grade button.g0 { color: var(--bad); }
+
+.next-bar { margin-top: 16px; }
+
+/* ---------- 結果 ---------- */
+.result-hero { text-align: center; padding: 26px 16px; }
+.result-hero .big { font-size: 46px; font-weight: 800; line-height: 1.2; }
+.result-hero .big small { font-size: 22px; color: var(--sub); font-weight: 700; }
+.result-hero .msg { font-size: 15px; margin-top: 6px; color: var(--sub); font-weight: 600; }
+.result-stats { display: flex; gap: 10px; margin-top: 18px; }
+.result-stats .stat {
+  flex: 1; background: var(--bg); border-radius: 12px; padding: 10px;
+  text-align: center;
+}
+.result-stats .stat .v { font-size: 18px; font-weight: 800; }
+.result-stats .stat .k { font-size: 11px; color: var(--sub); }
+
+.review-list { display: flex; flex-direction: column; gap: 8px; }
+.review-item {
+  display: flex; gap: 10px; align-items: baseline;
+  font-size: 13px; padding: 8px 10px; background: var(--bg); border-radius: 10px;
+}
+.review-item .mark { font-weight: 800; flex-shrink: 0; }
+.review-item .mark.ok { color: var(--good); }
+.review-item .mark.ng { color: var(--bad); }
+.review-item .txt { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 成績 ---------- */
+.record-summary { display: flex; flex-direction: column; gap: 8px; }
+.record-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.record-row .rname { width: 130px; flex-shrink: 0; font-weight: 600; }
+.record-row .bar { flex: 1; height: 14px; background: var(--bg); border-radius: 7px; overflow: hidden; }
+.record-row .bar > div { height: 100%; border-radius: 7px; background: var(--accent); }
+.record-row .pct { width: 68px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--bg); border-radius: 10px; font-size: 13px;
+}
+.history-item .date { color: var(--sub); flex-shrink: 0; width: 78px; }
+.history-item .desc { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item .score { font-weight: 800; flex-shrink: 0; }
+
+.empty { text-align: center; color: var(--sub); font-size: 14px; padding: 30px 10px; }
+
+@media (max-width: 420px) {
+  .record-row .rname { width: 108px; font-size: 12px; }
+}
