@@ -1351,24 +1351,37 @@
   }
 
   // ---------- 集計 ----------
-  function lastScoreFor(userId, exId, sectionId) {
-    var recs = getRecords(userId);
-    for (var i = recs.length - 1; i >= 0; i--) {
-      if (recs[i].examId === exId && recs[i].sectionId === sectionId) return recs[i];
-    }
-    return null;
-  }
-
   // セクションごとのマスター率:
   // 分母 = そのセクションの収録問題の総数（全回＋ドリル）
   // 分子 = これまでに2回以上正解できた問題の数
-  function masteryAggregate(userId) {
+  function masteryOkCounts(userId) {
     var okCount = {}; // qid -> 正解できた回数
     getRecords(userId).forEach(function (rec) {
       rec.details.forEach(function (d) {
         if (d.ok) okCount[d.qid] = (okCount[d.qid] || 0) + 1;
       });
     });
+    return okCount;
+  }
+
+  // 面接カード1枚ぶんの項目qidリスト（音読＋質問）
+  function spCardQids(card) {
+    var qids = [card.id + "-read"];
+    card.questions.forEach(function (q, i) { qids.push(card.id + "-q" + (i + 1)); });
+    return qids;
+  }
+
+  // 達成度バッジ: 2回正解できた問題の割合
+  function masteryBadge(qids, okCount) {
+    var mastered = 0;
+    qids.forEach(function (qid) { if ((okCount[qid] || 0) >= 2) mastered++; });
+    var pct = qids.length ? Math.round(100 * mastered / qids.length) : 0;
+    var cls = pct >= 80 ? "good" : pct > 0 ? "mid" : "none";
+    return '<span class="score-badge ' + cls + '">達成度：' + pct + "%</span>";
+  }
+
+  function masteryAggregate(userId) {
+    var okCount = masteryOkCounts(userId);
     var agg = {}; // key -> {mastered, total, title}
     function add(key, title, qid) {
       if (!agg[key]) agg[key] = { mastered: 0, total: 0, title: title };
@@ -1510,20 +1523,27 @@
       html += "</div>";
     }
 
-    // セクション一覧
+    // セクション一覧（バッジは達成度 = 2回正解できた問題の割合）
     var baseEx = isMix ? mixBaseExam() : EXAMS[state.examIdx];
-    var exId = isMix ? "mix" : examId(baseEx);
+    var okc = masteryOkCounts(state.userId);
     html += '<div class="section-list">';
     baseEx.sections.forEach(function (sec) {
-      if (isMix && sec.kind === "speaking") return; // 面接はミックス対象外
-      var last = lastScoreFor(state.userId, exId, sec.id);
-      var badge;
-      if (last) {
-        var pct = Math.round(100 * last.correct / last.total);
-        badge = '<span class="score-badge ' + pctBadgeClass(pct) + '">' + pct + "%</span>";
+      if (isMix && sec.kind === "speaking") return; // ミックスの面接は下でまとめて出す
+      var qids = [];
+      if (sec.kind === "speaking") {
+        (sec.cards || []).forEach(function (c) { qids = qids.concat(spCardQids(c)); });
+      } else if (isMix) {
+        EXAMS.forEach(function (ex2) {
+          ex2.sections.forEach(function (s2) {
+            if (s2.id === sec.id && s2.kind !== "speaking") {
+              s2.questions.forEach(function (q) { qids.push(q.id); });
+            }
+          });
+        });
       } else {
-        badge = '<span class="score-badge none">未</span>';
+        sec.questions.forEach(function (q) { qids.push(q.id); });
       }
+      var badge = masteryBadge(qids, okc);
       var limit = TIME_LIMITS[sec.id];
       var meta;
       if (sec.kind === "speaking") {
@@ -1552,18 +1572,15 @@
         });
       });
       if (spCards) {
-        var lastSp = null;
-        var recsAll = getRecords(state.userId);
-        for (var ri = recsAll.length - 1; ri >= 0; ri--) {
-          if (recsAll[ri].sectionId === "sp") { lastSp = recsAll[ri]; break; }
-        }
-        var spBadge;
-        if (lastSp) {
-          var spPct = Math.round(100 * lastSp.correct / lastSp.total);
-          spBadge = '<span class="score-badge ' + pctBadgeClass(spPct) + '">' + spPct + "%</span>";
-        } else {
-          spBadge = '<span class="score-badge none">未</span>';
-        }
+        var spQids = [];
+        EXAMS.forEach(function (ex3) {
+          ex3.sections.forEach(function (s3) {
+            if (s3.kind === "speaking") {
+              (s3.cards || []).forEach(function (c) { spQids = spQids.concat(spCardQids(c)); });
+            }
+          });
+        });
+        var spBadge = masteryBadge(spQids, okc);
         html += '<button class="section-item" data-action="start-section" data-sec="sp">' +
           '<span class="icon">🎤</span>' +
           '<span class="body"><span class="name">二次試験・面接（スピーキング）</span><br>' +
