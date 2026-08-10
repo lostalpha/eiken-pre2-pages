@@ -225,6 +225,28 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .feedback p { font-size: 14px; white-space: pre-wrap; }
 .feedback .script { font-size: 14px; white-space: pre-wrap; color: var(--ink); }
 
+.blank-chip {
+  display: inline-block; margin-bottom: 10px;
+  background: var(--warn-soft); color: var(--warn);
+  font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+}
+.blank-target {
+  background: var(--warn-soft); color: var(--warn);
+  font-weight: 800; border-radius: 6px; padding: 0 3px;
+}
+
+.choice-notes { display: flex; flex-direction: column; gap: 6px; }
+.choice-note {
+  display: flex; gap: 8px; align-items: flex-start;
+  font-size: 13px; color: var(--ink);
+}
+.choice-note .cn-label {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); font-size: 11px; font-weight: 700; color: var(--sub);
+  margin-top: 2px;
+}
+
 .writing-area {
   width: 100%; min-height: 150px; padding: 12px; font-size: 15px;
   border: 1px solid var(--line); border-radius: 10px; font-family: inherit;

@@ -113,6 +113,23 @@
     return (d.getMonth() + 1) + "/" + d.getDate() + " " +
       d.getHours() + ":" + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes();
   }
+  // "( 19 )" 形式の空所番号を抽出
+  function blankNumbers(text) {
+    var out = [];
+    var re = /\(\s*(\d+)\s*\)/g, m;
+    while ((m = re.exec(text)) !== null) {
+      if (out.indexOf(m[1]) === -1) out.push(m[1]);
+    }
+    return out;
+  }
+
+  // エスケープ済みテキスト中の対象空所 "( n )" をハイライト
+  function highlightBlank(escapedText, num) {
+    if (!num) return escapedText;
+    var re = new RegExp("\\(\\s*" + num + "\\s*\\)", "g");
+    return escapedText.replace(re, '<span class="blank-target">( ' + num + " )</span>");
+  }
+
   function fmtLimit(sec) {
     if (sec < 60) return sec + "秒";
     var m = Math.floor(sec / 60), s = sec % 60;
@@ -601,12 +618,21 @@
       "</div>" +
       '<div class="progress-bar"><div style="width:' + Math.round(100 * s.idx / s.entries.length) + '%"></div></div>';
 
+    // この問題の空所番号（問題番号と一致する空所が本文にあるか）
+    var targetBlank = null;
+    var promptBlanks = blankNumbers(q.prompt || "");
+    var passage = (q.passage_id && PINDEX[q.passage_id]) ? PINDEX[q.passage_id] : null;
+    if (promptBlanks.indexOf(String(q.number)) !== -1 ||
+        (passage && blankNumbers(passage.body).indexOf(String(q.number)) !== -1)) {
+      targetBlank = String(q.number);
+    }
+
     // 長文パッセージ
-    if (q.passage_id && PINDEX[q.passage_id]) {
-      var p = PINDEX[q.passage_id];
+    if (passage) {
+      var p = passage;
       html += '<div class="passage-box">' +
         (p.title ? '<div class="p-title">' + esc(p.title) + "</div>" : "") +
-        (entry.showPassage ? '<div class="p-body">' + esc(p.body) + "</div>" : "") +
+        (entry.showPassage ? '<div class="p-body">' + highlightBlank(esc(p.body), targetBlank) + "</div>" : "") +
         '<button class="passage-toggle" data-action="toggle-passage">' +
         (entry.showPassage ? "本文をとじる ▲" : "本文をひらく ▼") + "</button></div>";
     }
@@ -614,6 +640,10 @@
     // 問題文
     html += '<div class="question-box">';
     if (entry.instruction) html += '<div class="q-instruction">' + esc(entry.instruction) + "</div>";
+    // 空所が複数ある問題は、どの空所に答えるかを明示
+    if (targetBlank && (promptBlanks.length > 1 || (passage && blankNumbers(passage.body).length > 1))) {
+      html += '<div class="blank-chip">（ ' + targetBlank + " ）に入るものをえらぼう</div>";
+    }
     if (listening && !entry.done) {
       html += '<div class="listen-panel">' +
         '<div class="listen-note">' + (ttsOk ? "▶ をおして、音声をきいてからこたえよう（もういちど聞ける）" : "このブラウザは音声に対応していません。スクリプトを読んでこたえよう。") + "</div>";
@@ -625,7 +655,7 @@
       }
       html += "</div>";
     } else if (!listening) {
-      html += '<div class="q-prompt">' + esc(q.prompt) + "</div>";
+      html += '<div class="q-prompt">' + highlightBlank(esc(q.prompt), targetBlank) + "</div>";
     } else {
       html += '<div class="q-prompt" style="color:var(--sub);font-size:13px">（スクリプトは下の解説にあります）</div>';
     }
@@ -693,6 +723,17 @@
     }
     if (q.translation) html += "<h4>和訳</h4><p>" + esc(q.translation) + "</p>";
     if (q.explanation) html += "<h4>解説</h4><p>" + esc(q.explanation) + "</p>";
+    // 誤答選択肢ごとの解説（データにあれば表示）
+    if (q.choice_explanations) {
+      html += "<h4>ほかの選択肢はなぜちがう？</h4><div class=\"choice-notes\">";
+      (q.choices || []).forEach(function (c) {
+        var note = q.choice_explanations[c.label];
+        if (!note) return;
+        html += '<div class="choice-note"><span class="cn-label">' + esc(c.label) + "</span>" +
+          "<span>" + esc(note) + "</span></div>";
+      });
+      html += "</div>";
+    }
     html += "</div>" + nextBar();
     return html;
   }
