@@ -1572,6 +1572,16 @@
     }
     html += "</div>";
 
+    // 全体の進捗ミニ表示
+    var aggH = masteryAggregate(state.userId);
+    var hm = 0, ht = 0;
+    Object.keys(aggH).forEach(function (k) { hm += aggH[k].mastered; ht += aggH[k].total; });
+    var hPct = ht ? Math.round(100 * hm / ht) : 0;
+    html += '<div class="home-progress" data-action="to-records" role="button">' +
+      '<span class="hp-label">ぜんたいの進捗</span>' +
+      '<span class="mastery-bar"><div style="width:' + hPct + '%"></div></span>' +
+      '<span class="hp-pct">' + hPct + "%</span></div>";
+
     var weak = weakQids(state.userId);
     html += '<div class="home-links">' +
       '<button class="btn ghost" data-action="to-records">📊 せいせき</button>' +
@@ -1777,8 +1787,18 @@
 
     if (!recs.length) return html + '<div class="card"><div class="empty">まだきろくがありません。<br>練習してみよう！</div></div>';
 
-    // セクション別マスター率（収録問題のうち、2回正解できた問題の割合）
+    // 全体の進捗（全収録問題のマスター率）
     var agg = masteryAggregate(state.userId);
+    var sumM = 0, sumT = 0;
+    Object.keys(agg).forEach(function (k) { sumM += agg[k].mastered; sumT += agg[k].total; });
+    var allPct = sumT ? Math.round(100 * sumM / sumT) : 0;
+    html += '<div class="card mastery-hero">' +
+      '<h2>ぜんたいの進捗</h2>' +
+      '<div class="mastery-big">' + allPct + '<small>%</small></div>' +
+      '<div class="mastery-bar"><div style="width:' + allPct + '%"></div></div>' +
+      '<div class="mastery-sub">' + sumM + " / " + sumT + '問をマスター（2回正解）</div></div>';
+
+    // セクション別マスター率（収録問題のうち、2回正解できた問題の割合）
     html += '<div class="card"><h2>セクション別のマスター率</h2>' +
       '<p class="note" style="margin-bottom:10px">収録されている全問題のうち、<b>2回正解できた問題</b>のわりあいだよ。</p>' +
       '<div class="record-summary">';
