@@ -979,15 +979,20 @@
       html += viewWriting(entry);
     } else {
       // 選択肢
+      // 第1部は実試験では選択肢が問題冊子に印刷されない（放送のみ）ので、
+      // 解答するまでは番号だけを見せ、解答後にテキストを表示する
+      var hideChoiceText = entry.sectionId === "l1" && !entry.done;
       html += '<div class="choices">';
       (q.choices || []).forEach(function (c) {
         var cls = "choice";
+        if (hideChoiceText) cls += " no-text";
         if (entry.done) {
           if (c.label === q.answer) cls += " correct";
           else if (c.label === entry.picked) cls += " wrong";
         }
         html += '<button class="' + cls + '" data-action="choose" data-label="' + esc(c.label) + '"' +
-          (entry.done ? " disabled" : "") + '><span class="label">' + esc(c.label) + "</span><span>" + esc(c.text) + "</span></button>";
+          (entry.done ? " disabled" : "") + '><span class="label">' + esc(c.label) + "</span>" +
+          (hideChoiceText ? "" : "<span>" + esc(c.text) + "</span>") + "</button>";
       });
       html += "</div>";
       if (entry.done) html += viewFeedback(entry, listening);

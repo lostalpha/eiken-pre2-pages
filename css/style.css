@@ -212,6 +212,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .choice.wrong { border-color: var(--bad); background: var(--bad-soft); }
 .choice.wrong .label { background: var(--bad); color: #fff; }
 .choice:disabled { opacity: 0.92; cursor: default; }
+/* リスニング第1部: 解答前は選択肢テキスト非表示（実試験どおり番号のみ） */
+.choice.no-text { justify-content: center; padding: 15px 14px; }
+.choice.no-text .label { width: 30px; height: 30px; font-size: 15px; }
 
 .feedback {
   border-radius: var(--radius); padding: 16px; margin-top: 14px;
