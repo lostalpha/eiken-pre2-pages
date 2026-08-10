@@ -53,11 +53,15 @@
         });
       });
     });
-    // 初期表示タブ: 筆記・リスニングがある最初の回（面接のみの回はとばす）
-    for (var i = 0; i < EXAMS.length; i++) {
-      if (EXAMS[i].sections.some(function (s) { return s.kind !== "speaking"; })) {
-        state.examIdx = i;
-        break;
+  }
+
+  // 保存されていた出題範囲（"mix" または examId）を examIdx に反映する
+  function restoreExamSel(userId) {
+    var sel = getSettings(userId).examSel;
+    state.examIdx = -1; // 既定は全回ミックス
+    if (sel && sel !== "mix") {
+      for (var i = 0; i < EXAMS.length; i++) {
+        if (examId(EXAMS[i]) === sel) { state.examIdx = i; break; }
       }
     }
   }
@@ -201,7 +205,8 @@
   var state = {
     screen: "users",
     userId: null,
-    examIdx: 0,
+    examIdx: -1, // -1 = 全回ミックス（既定）
+    examPickerOpen: false,
     session: null,
     playing: false
   };
@@ -1044,31 +1049,66 @@
     render();
   }
 
-  // --- 面接: カード選択画面 ---
+  // --- 面接: カード選択画面（exIdx=-1 なら全回のカードを一覧） ---
   function viewSpSelect() {
-    var sec = spSection();
-    var ex = EXAMS[state.sp.exIdx];
+    var all = state.sp.exIdx === -1;
+    var entries = []; // {exIdx, sec}
+    if (all) {
+      EXAMS.forEach(function (ex, i) {
+        ex.sections.forEach(function (s) {
+          if (s.kind === "speaking") entries.push({ exIdx: i, sec: s });
+        });
+      });
+    } else {
+      entries.push({ exIdx: state.sp.exIdx, sec: spSection() });
+    }
+    if (!entries.length) return topbar("🎤 めんせつ練習", "home");
+
+    var heading = all ? "二次試験・面接（スピーキング）"
+      : examLabel(EXAMS[state.sp.exIdx]) + " " + entries[0].sec.title;
     var html = topbar("🎤 めんせつ練習", "home");
-    html += '<div class="card"><h2>' + esc(examLabel(ex)) + " " + esc(sec.title) + "</h2>" +
-      '<p class="note">' + esc(sec.instruction) + "</p>" +
+    html += '<div class="card"><h2>' + esc(heading) + "</h2>" +
+      '<p class="note">' + esc(entries[0].sec.instruction) + "</p>" +
       (micOk ? "" : '<p class="note" style="color:var(--bad);margin-top:8px">⚠️ このブラウザは録音に対応していないみたい。音声を聞いて声に出す練習はできるよ。</p>') +
       "</div>";
-    if (sec.sample_audio) {
+
+    // サンプル音声（どれかの回に入っていれば表示）
+    var sampleSec = null;
+    entries.forEach(function (e) { if (!sampleSec && e.sec.sample_audio) sampleSec = e.sec; });
+    if (sampleSec) {
       html += '<div class="card"><h2>👂 面接のながれをまるごと聞く</h2>' +
         '<p class="note">本番の面接がどう進むか、入室からあいさつ・質問まで通しで聞けるよ（べつのカードの例）。</p>' +
-        '<button class="btn ghost block" data-action="sp-sample">' +
+        '<button class="btn ghost block" data-action="sp-sample" data-rel="' + esc(sampleSec.sample_audio) + '">' +
         (state.playing ? "⏸ とめる" : "▶ サンプルをきく") + "</button>" +
         '<button class="passage-toggle" data-action="sp-sample-script">' +
         (state.sp.showSample ? "ながれをとじる ▲" : "ながれを見る ▼") + "</button>" +
-        (state.sp.showSample ? '<div class="sp-script">' + esc(sec.sample_script || "") + "</div>" : "") +
+        (state.sp.showSample ? '<div class="sp-script">' + esc(sampleSec.sample_script || "") + "</div>" : "") +
         "</div>";
     }
+
+    // これまでに練習したカードの回数（きろくから）
+    var cardTries = {};
+    getRecords(state.userId).forEach(function (rec) {
+      if (rec.sectionId !== "sp" || !rec.details.length) return;
+      var cid = rec.details[0].qid.replace(/-(read|q\d)$/, "");
+      cardTries[cid] = (cardTries[cid] || 0) + 1;
+    });
+
     html += '<div class="section-list">';
-    (sec.cards || []).forEach(function (c) {
-      html += '<button class="section-item" data-action="sp-card" data-card="' + esc(c.id) + '">' +
-        '<span class="icon">🗒️</span>' +
-        '<span class="body"><span class="name">' + esc(c.label) + "：" + esc(c.title) + '</span><br>' +
-        '<span class="meta">音読 ＋ 質問5つ（約7分）</span></span></button>';
+    entries.forEach(function (e) {
+      (e.sec.cards || []).forEach(function (c) {
+        var name = all
+          ? examLabel(EXAMS[e.exIdx]) + " " + c.label.replace("問題カード", "") + "：" + c.title
+          : c.label + "：" + c.title;
+        var tries = cardTries[c.id]
+          ? '<span class="score-badge good">' + cardTries[c.id] + "回</span>"
+          : '<span class="score-badge none">未</span>';
+        html += '<button class="section-item" data-action="sp-card" data-card="' + esc(c.id) +
+          '" data-ex="' + e.exIdx + '">' +
+          '<span class="icon">🗒️</span>' +
+          '<span class="body"><span class="name">' + esc(name) + '</span><br>' +
+          '<span class="meta">音読 ＋ 質問5つ（約7分）</span></span>' + tries + "</button>";
+      });
     });
     html += "</div>";
     return html;
@@ -1319,25 +1359,34 @@
     return null;
   }
 
-  function sectionAggregate(userId) {
-    // sectionId(w1..l3)ごとの正答率(全履歴)
-    var agg = {};
+  // セクションごとのマスター率:
+  // 分母 = そのセクションの収録問題の総数（全回＋ドリル）
+  // 分子 = これまでに2回以上正解できた問題の数
+  function masteryAggregate(userId) {
+    var okCount = {}; // qid -> 正解できた回数
     getRecords(userId).forEach(function (rec) {
       rec.details.forEach(function (d) {
-        var hit = QINDEX[d.qid];
-        var key, title;
-        if (hit) {
-          key = hit.section.id;
-          title = hit.section.title;
-        } else if (rec.sectionId === "sp") {
-          key = "sp";
-          title = "面接（スピーキング）";
+        if (d.ok) okCount[d.qid] = (okCount[d.qid] || 0) + 1;
+      });
+    });
+    var agg = {}; // key -> {mastered, total, title}
+    function add(key, title, qid) {
+      if (!agg[key]) agg[key] = { mastered: 0, total: 0, title: title };
+      agg[key].total++;
+      if ((okCount[qid] || 0) >= 2) agg[key].mastered++;
+    }
+    EXAMS.forEach(function (ex) {
+      ex.sections.forEach(function (sec) {
+        if (sec.kind === "speaking") {
+          (sec.cards || []).forEach(function (c) {
+            add("sp", "面接（スピーキング）", c.id + "-read");
+            c.questions.forEach(function (q, i) {
+              add("sp", "面接（スピーキング）", c.id + "-q" + (i + 1));
+            });
+          });
         } else {
-          return;
+          sec.questions.forEach(function (q) { add(sec.id, sec.title, q.id); });
         }
-        if (!agg[key]) agg[key] = { ok: 0, total: 0, title: title };
-        agg[key].total++;
-        if (d.ok) agg[key].ok++;
       });
     });
     return agg;
@@ -1440,18 +1489,25 @@
     });
     html += '</div><div class="seg-help">' + esc(TIMER_HELP[mode]) + "</div></div>";
 
-    // 回選択タブ（先頭は全回ミックス）
+    // 出題範囲（既定は全回ミックス。回の切りかえは折りたたみの中）
     var isMix = state.examIdx === -1;
-    html += '<div class="exam-tabs">';
-    html += '<button data-action="pick-exam" data-idx="-1"' +
-      (isMix ? ' class="selected"' : "") + ">🎲 全回ミックス</button>";
-    EXAMS.forEach(function (ex, i) {
-      html += '<button data-action="pick-exam" data-idx="' + i + '"' +
-        (i === state.examIdx ? ' class="selected"' : "") + ">" + esc(examLabel(ex)) + "</button>";
-    });
-    html += "</div>";
-    if (isMix) {
+    html += '<div class="exam-select">' +
+      '<span class="exam-current">' +
+      (isMix ? "🎲 全回ミックス" : "📚 " + esc(examLabel(EXAMS[state.examIdx]))) + "</span>" +
+      '<button class="exam-change" data-action="toggle-exam-picker">' +
+      (state.examPickerOpen ? "とじる ▲" : "回をえらぶ ▼") + "</button></div>";
+    if (isMix && !state.examPickerOpen) {
       html += '<div class="mix-note">ぜんぶの回からランダムに出題（まだ解いていない問題を優先）</div>';
+    }
+    if (state.examPickerOpen) {
+      html += '<div class="exam-tabs">';
+      html += '<button data-action="pick-exam" data-idx="-1"' +
+        (isMix ? ' class="selected"' : "") + ">🎲 全回ミックス（おすすめ）</button>";
+      EXAMS.forEach(function (ex, i) {
+        html += '<button data-action="pick-exam" data-idx="' + i + '"' +
+          (i === state.examIdx ? ' class="selected"' : "") + ">" + esc(examLabel(ex)) + "</button>";
+      });
+      html += "</div>";
     }
 
     // セクション一覧
@@ -1487,6 +1543,33 @@
         '<span class="body"><span class="name">' + esc(sec.title) + '</span><br>' +
         '<span class="meta">' + esc(meta) + "</span></span>" + badge + "</button>";
     });
+    // ミックス表示でも面接には入れるようにする（全回のカードから選ぶ）
+    if (isMix) {
+      var spCards = 0;
+      EXAMS.forEach(function (ex2) {
+        ex2.sections.forEach(function (s2) {
+          if (s2.kind === "speaking") spCards += (s2.cards || []).length;
+        });
+      });
+      if (spCards) {
+        var lastSp = null;
+        var recsAll = getRecords(state.userId);
+        for (var ri = recsAll.length - 1; ri >= 0; ri--) {
+          if (recsAll[ri].sectionId === "sp") { lastSp = recsAll[ri]; break; }
+        }
+        var spBadge;
+        if (lastSp) {
+          var spPct = Math.round(100 * lastSp.correct / lastSp.total);
+          spBadge = '<span class="score-badge ' + pctBadgeClass(spPct) + '">' + spPct + "%</span>";
+        } else {
+          spBadge = '<span class="score-badge none">未</span>';
+        }
+        html += '<button class="section-item" data-action="start-section" data-sec="sp">' +
+          '<span class="icon">🎤</span>' +
+          '<span class="body"><span class="name">二次試験・面接（スピーキング）</span><br>' +
+          '<span class="meta">全回のカード' + spCards + 'まいからえらぶ・マイクで録音</span></span>' + spBadge + "</button>";
+      }
+    }
     html += "</div>";
 
     var weak = weakQids(state.userId);
@@ -1694,16 +1777,18 @@
 
     if (!recs.length) return html + '<div class="card"><div class="empty">まだきろくがありません。<br>練習してみよう！</div></div>';
 
-    // セクション別正答率
-    var agg = sectionAggregate(state.userId);
-    html += '<div class="card"><h2>セクション別の正答率（これまで全部）</h2><div class="record-summary">';
+    // セクション別マスター率（収録問題のうち、2回正解できた問題の割合）
+    var agg = masteryAggregate(state.userId);
+    html += '<div class="card"><h2>セクション別のマスター率</h2>' +
+      '<p class="note" style="margin-bottom:10px">収録されている全問題のうち、<b>2回正解できた問題</b>のわりあいだよ。</p>' +
+      '<div class="record-summary">';
     ["w1", "w2", "w3", "w4", "w5", "w6", "l1", "l2", "l3", "sp"].forEach(function (key) {
       var a = agg[key];
       if (!a) return;
-      var pct = Math.round(100 * a.ok / a.total);
+      var pct = Math.round(100 * a.mastered / a.total);
       html += '<div class="record-row"><span class="rname">' + (SECTION_ICONS[key] || "") + " " + esc(shortTitle(a.title)) + "</span>" +
         '<span class="bar"><div style="width:' + pct + '%;background:' + barColor(pct) + '"></div></span>' +
-        '<span class="pct">' + pct + "%<small style=\"color:var(--sub);font-weight:400\"> (" + a.total + ")</small></span></div>";
+        '<span class="pct">' + pct + "%<small style=\"color:var(--sub);font-weight:400\"> " + a.mastered + "/" + a.total + "問</small></span></div>";
     });
     html += "</div></div>";
 
@@ -1741,6 +1826,8 @@
     switch (action) {
       case "pick-user":
         state.userId = t.getAttribute("data-id");
+        restoreExamSel(state.userId);
+        state.examPickerOpen = false;
         state.screen = "home";
         render();
         break;
@@ -1795,14 +1882,32 @@
         render();
         break;
       }
-      case "pick-exam":
+      case "pick-exam": {
         state.examIdx = parseInt(t.getAttribute("data-idx"), 10);
+        state.examPickerOpen = false;
+        var st1 = getSettings(state.userId);
+        st1.examSel = state.examIdx === -1 ? "mix" : examId(EXAMS[state.examIdx]);
+        setSettings(state.userId, st1);
         render();
         break;
-      case "start-section":
-        if (state.examIdx === -1) startMixSection(t.getAttribute("data-sec"));
-        else startSection(state.examIdx, t.getAttribute("data-sec"));
+      }
+      case "toggle-exam-picker":
+        state.examPickerOpen = !state.examPickerOpen;
+        render();
         break;
+      case "start-section": {
+        var secId0 = t.getAttribute("data-sec");
+        if (state.examIdx === -1 && secId0 === "sp") {
+          state.sp = { exIdx: -1 }; // 全回のカードから選ぶ
+          state.screen = "spSelect";
+          render();
+        } else if (state.examIdx === -1) {
+          startMixSection(secId0);
+        } else {
+          startSection(state.examIdx, secId0);
+        }
+        break;
+      }
       case "start-review":
         startReview(weakQids(state.userId));
         break;
@@ -1845,13 +1950,16 @@
       // --- 面接（スピーキング） ---
       case "sp-sample":
         if (state.playing) { stopSpeaking(); render(); }
-        else { spPlay(spSection().sample_audio, null, function () { render(); }); render(); }
+        else { spPlay(t.getAttribute("data-rel"), null, function () { render(); }); render(); }
         break;
       case "sp-sample-script":
         state.sp.showSample = !state.sp.showSample;
         render();
         break;
-      case "sp-card": spStartCard(t.getAttribute("data-card")); break;
+      case "sp-card":
+        state.sp.exIdx = parseInt(t.getAttribute("data-ex"), 10);
+        spStartCard(t.getAttribute("data-card"));
+        break;
       case "sp-begin": spBegin(); break;
       case "sp-skip-silent":
         stopSpeaking();

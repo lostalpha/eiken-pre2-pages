@@ -377,3 +377,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   padding: 24px 16px; text-align: center; font-size: 13px; color: var(--sub);
   line-height: 1.8; background: var(--bg);
 }
+
+/* ---------- 出題範囲セレクタ ---------- */
+.exam-select {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.exam-select .exam-current { font-size: 15px; font-weight: 700; }
+.exam-select .exam-change {
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  background: var(--accent-soft); border-radius: 999px; padding: 6px 14px;
+  flex-shrink: 0;
+}
