@@ -43,7 +43,13 @@
   }
 
   function launch(data) {
-    window.EIKEN_DATA = data;
+    if (data && !Array.isArray(data)) {
+      // 新形式: { exams: [...], config: { geminiKey, ... } }
+      window.EIKEN_CONFIG = data.config || null;
+      window.EIKEN_DATA = data.exams || [];
+    } else {
+      window.EIKEN_DATA = data;
+    }
     window.dispatchEvent(new Event("eiken:data-ready"));
   }
 

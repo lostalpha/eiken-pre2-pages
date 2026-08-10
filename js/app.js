@@ -470,6 +470,140 @@
     render();
   }
 
+  // ---------- AI添削（Gemini） ----------
+  function aiConf() {
+    var c = window.EIKEN_CONFIG;
+    return (c && c.geminiKey) ? c : null;
+  }
+
+  function buildAiPrompt(entry) {
+    var q = entry.q;
+    var isEmail = entry.sectionId === "w5";
+    var kind = isEmail ? "Eメール返信問題（語数の目安: 40〜50語）" : "意見論述問題（語数の目安: 50〜60語）";
+    return [
+      "あなたは英検準2級ライティングの採点官です。日本の中学生が書いた答案を、やさしい日本語で添削してください。",
+      "",
+      "【問題の種類】" + kind,
+      "【問題の指示】" + (entry.instruction || ""),
+      "【問題文】",
+      q.prompt || "",
+      "",
+      "【採点のポイント】" + (q.rubric || ""),
+      "【模範解答の例】" + (q.model_answer || ""),
+      "",
+      "【生徒の答案】",
+      entry.writingText || "",
+      "",
+      "次の形式で、中学生にわかるやさしい日本語で添削してください。むずかしい漢字や文法用語はさけてください。",
+      "",
+      "## ひょうか（各4点満点）",
+      "- 内容: ?/4 — ひとことで理由",
+      "- 構成: ?/4 — ひとことで理由",
+      "- 語い: ?/4 — ひとことで理由",
+      "- 文法: ?/4 — ひとことで理由",
+      "",
+      "## よかったところ",
+      "（具体的に2つほど。がんばりをほめてください）",
+      "",
+      "## なおすとよいところ",
+      "（まちがいは「もとの文 → なおした文」の形で示し、理由をひとことそえる。語数が目安から大きく外れていたら教える）",
+      "",
+      "## お手本（あなたの答えを活かした修正版）",
+      "（生徒の書いた内容や意見をなるべく活かして、自然な英文に直した全文）",
+      "",
+      "答案がほとんど書かれていない場合は、採点のかわりに、この問題の答えの組み立て方をやさしく教えてください。"
+    ].join("\n");
+  }
+
+  function onAiReview() {
+    var entry = currentEntry();
+    var conf = aiConf();
+    if (!entry || !conf || (entry.ai && entry.ai.state === "loading")) return;
+    entry.ai = { state: "loading" };
+    render();
+    var model = conf.geminiModel || "gemini-2.5-flash";
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model +
+          ":generateContent?key=" + encodeURIComponent(conf.geminiKey), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: buildAiPrompt(entry) }] }] })
+    }).then(function (res) {
+      if (!res.ok) {
+        var msg = res.status === 429
+          ? "きょうのAIの無料わくを使い切ったみたい。また明日ためしてね。"
+          : "AIにつながりませんでした（" + res.status + "）。少し待ってから、もういちど試してね。";
+        var e = new Error(msg);
+        e.friendly = true;
+        throw e;
+      }
+      return res.json();
+    }).then(function (data) {
+      var cand = data && data.candidates && data.candidates[0];
+      var parts = cand && cand.content && cand.content.parts;
+      var text = (parts || []).map(function (p) { return p.text || ""; }).join("");
+      if (!text) {
+        var e = new Error("AIからうまく返事がもらえませんでした。もういちど試してね。");
+        e.friendly = true;
+        throw e;
+      }
+      entry.ai = { state: "done", text: text };
+    }).catch(function (err) {
+      entry.ai = {
+        state: "error",
+        error: (err && err.friendly) ? err.message :
+          "つうしんエラーです。ネットにつながっているかたしかめて、もういちど試してね。"
+      };
+    }).then(function () {
+      var s = state.session;
+      if (s && s.entries[s.idx] === entry) render();
+    });
+  }
+
+  // AIの返事（Markdown風テキスト）を安全なHTMLにする簡易レンダラ
+  function renderAiText(text) {
+    var lines = String(text || "").split(/\r?\n/);
+    var html = "";
+    var inList = false;
+    lines.forEach(function (line) {
+      var t = line.trim();
+      var isItem = /^[-*・]\s/.test(t);
+      if (inList && !isItem) { html += "</ul>"; inList = false; }
+      if (!t) return;
+      var body = esc(isItem ? t.replace(/^[-*・]\s+/, "") : t.replace(/^#+\s*/, ""))
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+      if (/^#+\s/.test(t)) {
+        html += "<h4>" + body + "</h4>";
+      } else if (isItem) {
+        if (!inList) { html += "<ul>"; inList = true; }
+        html += "<li>" + body + "</li>";
+      } else {
+        html += "<p>" + body + "</p>";
+      }
+    });
+    if (inList) html += "</ul>";
+    return html;
+  }
+
+  function viewAiSection(entry) {
+    if (!aiConf()) return "";
+    if (!entry.writingText || entry.writingText.trim().length < 5) return "";
+    var html = '<div class="card ai-box"><h2>🤖 AIせんせいの添削</h2>';
+    var st = entry.ai && entry.ai.state;
+    if (!st) {
+      html += '<p class="ai-note">書いた答えをAIがチェックして、よいところ・なおすところを教えてくれるよ。</p>' +
+        '<button class="btn primary block" data-action="ai-review">添削してもらう</button>';
+    } else if (st === "loading") {
+      html += '<p class="ai-note">AIせんせいが読んでいます… ちょっと待ってね ⏳</p>';
+    } else if (st === "error") {
+      html += '<p class="ai-note ai-error">' + esc(entry.ai.error || "") + "</p>" +
+        '<button class="btn primary block" data-action="ai-review">もういちど試す</button>';
+    } else {
+      html += '<div class="ai-result">' + renderAiText(entry.ai.text) + "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
   function onSelfGrade(g) {
     var entry = currentEntry();
     entry.selfGrade = g;
@@ -789,6 +923,7 @@
       if (q.translation) html += "<h4>和訳</h4><p>" + esc(q.translation) + "</p>";
       if (q.explanation) html += "<h4>解説</h4><p>" + esc(q.explanation) + "</p>";
       html += "</div>";
+      html += viewAiSection(entry);
       if (entry.selfGrade === null) {
         html += '<div class="card"><h2>自己採点しよう</h2><div class="self-grade">' +
           '<button class="g2" data-action="self-grade" data-g="2">◎ 書けた</button>' +
@@ -1020,6 +1155,7 @@
       }
       case "choose": onChoice(t.getAttribute("data-label")); break;
       case "writing-reveal": onWritingReveal(); break;
+      case "ai-review": onAiReview(); break;
       case "self-grade": onSelfGrade(parseInt(t.getAttribute("data-g"), 10)); break;
       case "next": nextQuestion(); break;
     }

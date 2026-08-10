@@ -308,3 +308,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @media (max-width: 420px) {
   .record-row .rname { width: 108px; font-size: 12px; }
 }
+
+/* ---------- AI添削 ---------- */
+.ai-box { border: 1px solid var(--accent-soft); }
+.ai-note { font-size: 13px; color: var(--sub); margin-bottom: 10px; }
+.ai-error { color: var(--bad); }
+.ai-result { font-size: 14px; }
+.ai-result h4 { margin: 14px 0 6px; font-size: 14px; color: var(--accent); }
+.ai-result h4:first-child { margin-top: 0; }
+.ai-result p { margin: 4px 0; line-height: 1.7; }
+.ai-result ul { margin: 4px 0 8px 20px; }
+.ai-result li { margin: 3px 0; line-height: 1.6; }
