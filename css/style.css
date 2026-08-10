@@ -329,3 +329,46 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .ai-result p { margin: 4px 0; line-height: 1.7; }
 .ai-result ul { margin: 4px 0 8px 20px; }
 .ai-result li { margin: 3px 0; line-height: 1.6; }
+
+/* ---------- 面接（スピーキング） ---------- */
+.sp-card {
+  background: #fffdf5; border: 2px solid #e8ddb8; border-radius: var(--radius);
+  padding: 18px; margin-bottom: 14px; box-shadow: var(--shadow);
+}
+.sp-card-title { font-weight: 800; font-size: 17px; text-align: center; margin-bottom: 10px; }
+.sp-passage { font-size: 15px; line-height: 1.9; }
+.sp-pic-label {
+  font-size: 12px; font-weight: 700; color: var(--sub);
+  margin: 12px 0 4px; letter-spacing: 0.05em;
+}
+.sp-picture { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.sp-picture svg { display: block; width: 100%; height: auto; }
+.sp-countdown {
+  text-align: center; font-size: 22px; font-weight: 800; color: var(--accent);
+  margin: 6px 0 10px;
+}
+.sp-countdown span { font-size: 42px; }
+.sp-note-strong { font-size: 15px; font-weight: 700; margin-bottom: 8px; line-height: 1.7; }
+.sp-steps { margin: 8px 0 12px 22px; font-size: 14px; }
+.sp-steps li { margin: 4px 0; }
+.sp-tip {
+  background: var(--warn-soft); color: #7a5410; border-radius: 10px;
+  font-size: 13px; padding: 8px 12px; margin: 10px 0; line-height: 1.7;
+}
+.sp-qtext { font-size: 14px; margin-top: 8px; line-height: 1.7; }
+.sp-qtrans { color: var(--sub); font-size: 13px; margin-top: 4px; }
+.sp-script {
+  white-space: pre-wrap; font-size: 13px; color: var(--sub);
+  background: var(--bg); border-radius: 10px; padding: 12px; margin-top: 10px; line-height: 1.8;
+}
+.sp-rec { margin: 4px 0 14px; }
+.sp-rec-live {
+  text-align: center; font-weight: 700; color: var(--bad);
+  margin-bottom: 8px; animation: sp-blink 1.2s infinite;
+}
+@keyframes sp-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.sp-rec-row { display: flex; gap: 10px; margin-top: 10px; }
+.sp-rec-row .btn { flex: 1; }
+.sp-model { font-size: 13.5px; margin-top: 6px; line-height: 1.7; }
+.sp-review-item h2 { margin-bottom: 4px; }
+.sp-grade button.selected { outline: 3px solid currentColor; }

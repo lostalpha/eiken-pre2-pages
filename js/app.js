@@ -20,7 +20,7 @@
 
   var SECTION_ICONS = {
     w1: "📝", w2: "💬", w3: "📄", w4: "📖", w5: "✉️", w6: "🖊️",
-    l1: "🎧", l2: "🎧", l3: "🎧"
+    l1: "🎧", l2: "🎧", l3: "🎧", sp: "🎤"
   };
 
   var EMOJIS = ["🐱", "🐶", "🐰", "🦊", "🐼", "🐧", "🦁", "🐸", "🦄", "🐢", "🐙", "⭐"];
@@ -446,6 +446,12 @@
     var sec = null;
     for (var i = 0; i < ex.sections.length; i++) if (ex.sections[i].id === sectionId) sec = ex.sections[i];
     if (!sec) return;
+    if (sec.kind === "speaking") {
+      state.sp = { exIdx: exIdx };
+      state.screen = "spSelect";
+      render();
+      return;
+    }
     var refs = sec.questions.map(function (q) {
       return { q: q, sectionId: sec.id, instruction: sec.instruction };
     });
@@ -692,6 +698,526 @@
     render();
   }
 
+  // ---------- 二次試験・面接（スピーキング） ----------
+  // state.sp = { exIdx, card, step, qIdx, recs, grades, ai, recording, silentRemain, silentTimer }
+  // step: intro → dir1(説明再生中) → silent(黙読20秒) → aloud(音読録音) → q(質問) → turn(カード裏返し) → review
+  var micOk = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  var spMedia = { rec: null, stream: null };
+
+  // 音声(.m4a)が取得できないときに読み上げで代用する定型文
+  var SP_FALLBACK = {
+    dir1: "Let's begin the test. Here is your card. First, please read the passage silently for twenty seconds.",
+    dir2: "All right. Now, please read the passage aloud.",
+    turn: "Now, please turn over the card and put it down."
+  };
+
+  function spSection() {
+    var ex = EXAMS[state.sp.exIdx];
+    for (var i = 0; i < ex.sections.length; i++) {
+      if (ex.sections[i].kind === "speaking") return ex.sections[i];
+    }
+    return null;
+  }
+
+  function spPlay(rel, fallbackText, onDone) {
+    stopSpeaking();
+    state.playing = true;
+    var token = {};
+    state.playToken = token;
+    var fail = function () {
+      if (state.playToken !== token) return;
+      state.playing = false;
+      if (fallbackText) speakScript(fallbackText, onDone);
+      else if (onDone) onDone();
+    };
+    resolveAudioUrl(rel)
+      .then(function (url) {
+        if (state.playToken !== token || !state.playing) return;
+        audioEl.src = url;
+        audioEl.currentTime = 0;
+        audioEl.onended = function () { state.playing = false; if (onDone) onDone(); };
+        audioEl.onerror = fail;
+        var p = audioEl.play();
+        if (p && p.catch) p.catch(fail);
+      })
+      .catch(fail);
+  }
+
+  function spPlayBlobUrl(url) {
+    stopSpeaking();
+    state.playing = true;
+    state.playToken = {};
+    audioEl.src = url;
+    audioEl.currentTime = 0;
+    audioEl.onended = function () { state.playing = false; };
+    audioEl.onerror = function () { state.playing = false; };
+    var p = audioEl.play();
+    if (p && p.catch) p.catch(function () { state.playing = false; });
+  }
+
+  function spStartCard(cardId) {
+    var sec = spSection();
+    var card = null;
+    (sec.cards || []).forEach(function (c) { if (c.id === cardId) card = c; });
+    if (!card) return;
+    state.sp.card = card;
+    state.sp.step = "intro";
+    state.sp.qIdx = 0;
+    state.sp.recs = {};
+    state.sp.grades = {};
+    state.sp.showText = {};
+    state.sp.ai = null;
+    state.sp.recording = null;
+    state.screen = "spFlow";
+    render();
+  }
+
+  function spCleanup() {
+    if (state.sp && state.sp.silentTimer) { clearInterval(state.sp.silentTimer); state.sp.silentTimer = null; }
+    if (spMedia.rec && spMedia.rec.state !== "inactive") { try { spMedia.rec.stop(); } catch (e) {} }
+    if (spMedia.stream) { spMedia.stream.getTracks().forEach(function (t) { t.stop(); }); spMedia.stream = null; }
+    spMedia.rec = null;
+    stopSpeaking();
+    if (state.sp && state.sp.recs) {
+      Object.keys(state.sp.recs).forEach(function (k) {
+        if (state.sp.recs[k].url) URL.revokeObjectURL(state.sp.recs[k].url);
+      });
+    }
+  }
+
+  function spQuit() {
+    if (!confirm("とちゅうでやめますか？（録音ときろくは消えます）")) return;
+    spCleanup();
+    state.sp = null;
+    state.screen = "home";
+    render();
+  }
+
+  function spBegin() {
+    state.sp.step = "dir1";
+    render();
+    spPlay(state.sp.card.audio.dir1, SP_FALLBACK.dir1, function () {
+      if (state.screen === "spFlow" && state.sp.step === "dir1") spStartSilent();
+    });
+  }
+
+  function spStartSilent() {
+    state.sp.step = "silent";
+    state.sp.silentRemain = 20;
+    render();
+    state.sp.silentTimer = setInterval(function () {
+      state.sp.silentRemain--;
+      var node = el("sp-count");
+      if (node) node.textContent = state.sp.silentRemain;
+      if (state.sp.silentRemain <= 0) spEndSilent();
+    }, 1000);
+  }
+
+  function spEndSilent() {
+    if (state.sp.silentTimer) { clearInterval(state.sp.silentTimer); state.sp.silentTimer = null; }
+    state.sp.step = "aloud";
+    render();
+    spPlay(state.sp.card.audio.dir2, SP_FALLBACK.dir2, null);
+  }
+
+  function spRecKey() {
+    var sp = state.sp;
+    return sp.step === "aloud" ? "read" : "q" + (sp.qIdx + 1);
+  }
+
+  function spStartRec() {
+    if (!micOk) { alert("このブラウザではマイク録音が使えないみたい。"); return; }
+    stopSpeaking();
+    var key = spRecKey();
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      spMedia.stream = stream;
+      var mime = "";
+      ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].some(function (m) {
+        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) { mime = m; return true; }
+        return false;
+      });
+      var rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      var chunks = [];
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function () {
+        if (spMedia.stream) { spMedia.stream.getTracks().forEach(function (t) { t.stop(); }); spMedia.stream = null; }
+        spMedia.rec = null;
+        var sp = state.sp;
+        if (!sp) return;
+        var blob = new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
+        if (sp.recs[key] && sp.recs[key].url) URL.revokeObjectURL(sp.recs[key].url);
+        sp.recs[key] = { blob: blob, url: URL.createObjectURL(blob), mime: blob.type || "audio/webm" };
+        sp.recording = null;
+        sp.ai = null; // 録音し直したら前のAIアドバイスは古くなる
+        if (state.screen === "spFlow") render();
+      };
+      spMedia.rec = rec;
+      state.sp.recording = key;
+      rec.start();
+      render();
+    }).catch(function () {
+      alert("マイクが使えませんでした。ブラウザのマイク許可をたしかめてね。");
+    });
+  }
+
+  function spStopRec() {
+    if (spMedia.rec && spMedia.rec.state !== "inactive") spMedia.rec.stop();
+  }
+
+  function spNext() {
+    var sp = state.sp;
+    stopSpeaking();
+    if (sp.step === "aloud") {
+      sp.step = "q";
+      sp.qIdx = 0;
+    } else if (sp.step === "q") {
+      var qs = sp.card.questions;
+      // No.3のあとはカードを裏返す
+      if (sp.qIdx === 2) {
+        sp.step = "turn";
+      } else if (sp.qIdx + 1 < qs.length) {
+        sp.qIdx++;
+      } else {
+        sp.step = "review";
+      }
+    } else if (sp.step === "turn") {
+      sp.step = "q";
+      sp.qIdx = 3;
+    }
+    render();
+    if (sp.step === "turn") spPlay(sp.card.audio.turn, SP_FALLBACK.turn, null);
+    if (sp.step === "q") {
+      var q = sp.card.questions[sp.qIdx];
+      if (q && q.audio) spPlay(q.audio, q.text, null);
+    }
+  }
+
+  // ふりかえり画面の項目リスト
+  function spItems() {
+    var card = state.sp.card;
+    var items = [{
+      key: "read", label: "音読", question: "パッセージの音読",
+      model: card.passage
+    }];
+    card.questions.forEach(function (q, i) {
+      items.push({
+        key: "q" + (i + 1), label: "No." + q.no, question: q.text,
+        model: q.model_answer ||
+          ("Yes.の場合: " + q.model_answers.yes + " / No.の場合: " + q.model_answers.no)
+      });
+    });
+    return items;
+  }
+
+  function spAiPrompt(withRec) {
+    var card = state.sp.card;
+    var lines = [
+      "あなたは英検準2級の面接官の先生です。日本の中学生の二次試験（面接）の練習の録音を聞いて、やさしい日本語でアドバイスしてください。むずかしい漢字や文法用語はさけてください。",
+      "",
+      "【問題カード】" + card.title,
+      "【パッセージ】",
+      card.passage,
+      "",
+      "このメッセージに添付した音声は、順番につぎの録音です。"
+    ];
+    withRec.forEach(function (it, i) {
+      lines.push("音声" + (i + 1) + ": " + it.label + " ／ 課題: " + it.question);
+      lines.push("　模範解答の例: " + it.model);
+    });
+    lines = lines.concat([
+      "",
+      "つぎの形式で書いてください。",
+      "## それぞれのふりかえり",
+      "- 音読: 発音・スピード・つまらずに読めたか をほめつつ、直すところをひとこと",
+      "- No.1〜No.5: まず聞き取った答えを「英語で」書き、良かった点、直すとよい点（文法・発音）、もっと良い答え方の例（英語＋日本語訳）",
+      "## 点数よそう",
+      "- 音読 ?/5点、No.1〜No.5 各?/5点（英検の基準っぽく、甘すぎず辛すぎず）",
+      "## 全体のアドバイス",
+      "- がんばりをほめて、次に練習するとよいことを2つまで",
+      "",
+      "録音がうまく聞き取れないときは、正直に「聞き取れなかった」と書いて、その問題の答え方のコツを教えてください。"
+    ]);
+    return lines.join("\n");
+  }
+
+  function spAiReview() {
+    var sp = state.sp;
+    var conf = aiConf();
+    if (!conf || (sp.ai && sp.ai.state === "loading")) return;
+    var withRec = spItems().filter(function (it) { return sp.recs[it.key]; });
+    if (!withRec.length) return;
+    sp.ai = { state: "loading" };
+    render();
+    Promise.all(withRec.map(function (it) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(String(fr.result).split(",")[1]); };
+        fr.onerror = function () { reject(new Error("read error")); };
+        fr.readAsDataURL(sp.recs[it.key].blob);
+      });
+    })).then(function (b64s) {
+      var parts = [{ text: spAiPrompt(withRec) }];
+      withRec.forEach(function (it, i) {
+        parts.push({ inline_data: { mime_type: (sp.recs[it.key].mime || "audio/webm").split(";")[0], data: b64s[i] } });
+      });
+      var model = conf.geminiModel || "gemini-flash-latest";
+      return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model +
+            ":generateContent?key=" + encodeURIComponent(conf.geminiKey), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: parts }] })
+      });
+    }).then(function (res) {
+      if (!res.ok) {
+        var msg = res.status === 429
+          ? "きょうのAIの無料わくを使い切ったみたい。また明日ためしてね。"
+          : "AIにつながりませんでした（" + res.status + "）。少し待ってから、もういちど試してね。";
+        var e = new Error(msg);
+        e.friendly = true;
+        throw e;
+      }
+      return res.json();
+    }).then(function (data) {
+      var cand = data && data.candidates && data.candidates[0];
+      var text = ((cand && cand.content && cand.content.parts) || [])
+        .map(function (p) { return p.text || ""; }).join("");
+      if (!text) {
+        var e = new Error("AIからうまく返事がもらえませんでした。もういちど試してね。");
+        e.friendly = true;
+        throw e;
+      }
+      sp.ai = { state: "done", text: text };
+    }).catch(function (err) {
+      sp.ai = {
+        state: "error",
+        error: (err && err.friendly) ? err.message :
+          "つうしんエラーです。ネットにつながっているかたしかめて、もういちど試してね。"
+      };
+    }).then(function () {
+      if (state.screen === "spFlow" && state.sp === sp) render();
+    });
+  }
+
+  function spFinish() {
+    var sp = state.sp;
+    var details = spItems().map(function (it) {
+      var g = sp.grades[it.key];
+      return {
+        qid: sp.card.id + "-" + it.key,
+        ok: g != null ? g >= 1 : !!sp.recs[it.key],
+        timedOut: false, timeSec: 0,
+        selfGrade: g != null ? g : null
+      };
+    });
+    var correct = details.filter(function (d) { return d.ok; }).length;
+    addRecord(state.userId, {
+      date: Date.now(),
+      examId: sp.examId || examId(EXAMS[state.sp.exIdx]),
+      sectionId: "sp",
+      label: examLabel(EXAMS[state.sp.exIdx]) + " 面接 " + sp.card.label,
+      timerMode: "off",
+      correct: correct,
+      total: details.length,
+      timeSec: 0,
+      details: details
+    });
+    spCleanup();
+    state.sp = null;
+    state.screen = "home";
+    render();
+  }
+
+  // --- 面接: カード選択画面 ---
+  function viewSpSelect() {
+    var sec = spSection();
+    var ex = EXAMS[state.sp.exIdx];
+    var html = topbar("🎤 めんせつ練習", "home");
+    html += '<div class="card"><h2>' + esc(examLabel(ex)) + " " + esc(sec.title) + "</h2>" +
+      '<p class="note">' + esc(sec.instruction) + "</p>" +
+      (micOk ? "" : '<p class="note" style="color:var(--bad);margin-top:8px">⚠️ このブラウザは録音に対応していないみたい。音声を聞いて声に出す練習はできるよ。</p>') +
+      "</div>";
+    if (sec.sample_audio) {
+      html += '<div class="card"><h2>👂 面接のながれをまるごと聞く</h2>' +
+        '<p class="note">本番の面接がどう進むか、入室からあいさつ・質問まで通しで聞けるよ（べつのカードの例）。</p>' +
+        '<button class="btn ghost block" data-action="sp-sample">' +
+        (state.playing ? "⏸ とめる" : "▶ サンプルをきく") + "</button>" +
+        '<button class="passage-toggle" data-action="sp-sample-script">' +
+        (state.sp.showSample ? "ながれをとじる ▲" : "ながれを見る ▼") + "</button>" +
+        (state.sp.showSample ? '<div class="sp-script">' + esc(sec.sample_script || "") + "</div>" : "") +
+        "</div>";
+    }
+    html += '<div class="section-list">';
+    (sec.cards || []).forEach(function (c) {
+      html += '<button class="section-item" data-action="sp-card" data-card="' + esc(c.id) + '">' +
+        '<span class="icon">🗒️</span>' +
+        '<span class="body"><span class="name">' + esc(c.label) + "：" + esc(c.title) + '</span><br>' +
+        '<span class="meta">音読 ＋ 質問5つ（約7分）</span></span></button>';
+    });
+    html += "</div>";
+    return html;
+  }
+
+  // --- 面接: 練習フロー ---
+  function spStepLabel() {
+    var sp = state.sp;
+    switch (sp.step) {
+      case "intro": return "じゅんび";
+      case "dir1": return "説明";
+      case "silent": return "黙読 20秒";
+      case "aloud": return "音読";
+      case "turn": return "カードをうらがえす";
+      case "q": return "No." + sp.card.questions[sp.qIdx].no + " / 5";
+      case "review": return "ふりかえり";
+    }
+    return "";
+  }
+
+  function spCardBox(which) {
+    // which: "passage" | "pictureA" | "pictureB" | null
+    var card = state.sp.card;
+    var html = '<div class="sp-card">';
+    if (which === "passage" || which === "all") {
+      html += '<div class="sp-card-title">' + esc(card.title) + "</div>" +
+        '<div class="sp-passage">' + esc(card.passage) + "</div>";
+    }
+    if (which === "pictureA" || which === "all") {
+      html += '<div class="sp-pic-label">Picture A</div><div class="sp-picture">' + card.pictureA + "</div>";
+    }
+    if (which === "pictureB" || which === "all") {
+      html += '<div class="sp-pic-label">Picture B</div><div class="sp-picture">' + card.pictureB + "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function spRecControls() {
+    var sp = state.sp;
+    var key = spRecKey();
+    var rec = sp.recs[key];
+    var html = '<div class="sp-rec">';
+    if (sp.recording === key) {
+      html += '<div class="sp-rec-live">🔴 録音中… 話しおわったら止めてね</div>' +
+        '<button class="btn danger block" data-action="sp-rec-stop">⏹ 録音をとめる</button>';
+    } else {
+      html += '<button class="btn primary block" data-action="sp-rec-start">' +
+        (rec ? "🎙️ とりなおす" : "🎙️ 録音スタート") + "</button>";
+      if (rec) {
+        html += '<div class="sp-rec-row">' +
+          '<button class="btn ghost" data-action="sp-rec-play" data-key="' + key + '">▶ 自分の声をきく</button>' +
+          '<button class="btn primary" data-action="sp-next">つぎへ →</button></div>';
+      }
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function viewSpFlow() {
+    var sp = state.sp;
+    var card = sp.card;
+    var html = '<div class="quiz-head">' +
+      '<button class="quiz-quit" data-action="sp-quit">✕ やめる</button>' +
+      '<div class="progress">' + spStepLabel() + "</div></div>";
+
+    if (sp.step === "intro") {
+      html += '<div class="card"><h2>🎤 ' + esc(card.label) + "：" + esc(card.title) + "</h2>" +
+        '<p class="note">本番とおなじながれで練習するよ：</p>' +
+        '<ol class="sp-steps"><li>面接官の説明をきく</li><li>パッセージを20秒で黙読</li>' +
+        "<li>声に出して読む（録音）</li><li>質問5つに答える（録音）</li><li>ふりかえり＆AIのアドバイス</li></ol>" +
+        '<p class="note">しずかな場所で、マイクの許可をきかれたら「許可」をおしてね。</p>' +
+        '<button class="btn primary block" data-action="sp-begin">はじめる</button></div>';
+      return html;
+    }
+    if (sp.step === "dir1") {
+      html += spCardBox("all");
+      html += '<div class="card"><p class="sp-note-strong">🎧 面接官の説明をきいてね…</p>' +
+        '<button class="btn ghost block" data-action="sp-skip-silent">説明をとばして黙読へ</button></div>';
+      return html;
+    }
+    if (sp.step === "silent") {
+      html += '<div class="sp-countdown">のこり <span id="sp-count">' + sp.silentRemain + "</span> 秒</div>" +
+        '<p class="sp-note-strong" style="text-align:center">パッセージを声に出さずに読もう</p>';
+      html += spCardBox("all");
+      html += '<button class="btn ghost block" data-action="sp-skip-silent2">もう読めた（音読へすすむ）</button>';
+      return html;
+    }
+    if (sp.step === "aloud") {
+      html += '<div class="card"><p class="sp-note-strong">📖 パッセージを声に出して読んで、録音しよう</p>' +
+        '<p class="note">タイトルから読んでね。あわてなくてだいじょうぶ。</p></div>';
+      html += spCardBox("passage");
+      html += spRecControls();
+      if (sp.recs.read) {
+        html += '<button class="btn ghost block" data-action="sp-play" data-rel="' + esc(card.audio.model) + '">👂 お手本の音読をきく</button>';
+      }
+      return html;
+    }
+    if (sp.step === "turn") {
+      html += '<div class="card" style="text-align:center"><div style="font-size:40px">🙈</div>' +
+        '<p class="sp-note-strong">ここでカードをうらがえすよ。<br>のこりの質問は、カードを見ないで自分の考えで答えてね。</p>' +
+        '<button class="btn primary block" data-action="sp-next">わかった、つぎへ →</button></div>';
+      return html;
+    }
+    if (sp.step === "q") {
+      var q = card.questions[sp.qIdx];
+      html += '<div class="card">' +
+        '<p class="sp-note-strong">🎧 No.' + q.no + ' の質問をきいて、声で答えよう</p>' +
+        '<div class="sp-rec-row">' +
+        '<button class="btn ghost" data-action="sp-play" data-rel="' + esc(q.audio) + '" data-fallback="' + esc(q.text) + '">▶ 質問をきく</button>' +
+        (q.follow_audio ? '<button class="btn ghost" data-action="sp-play" data-rel="' + esc(q.follow_audio) + '">▶ つづきの質問</button>' : "") +
+        "</div>" +
+        (q.tip ? '<p class="sp-tip">💡 ' + esc(q.tip) + "</p>" : "") +
+        '<button class="passage-toggle" data-action="sp-text-toggle">' +
+        (sp.showText[q.id] ? "質問の文をとじる ▲" : "質問の文を見る ▼") + "</button>" +
+        (sp.showText[q.id] ? '<div class="sp-qtext">' + esc(q.text) +
+          (q.translation ? '<div class="sp-qtrans">' + esc(q.translation) + "</div>" : "") + "</div>" : "") +
+        "</div>";
+      if (q.uses === "passage") html += spCardBox("passage");
+      else if (q.uses === "pictureA") html += spCardBox("pictureA");
+      else if (q.uses === "pictureB") html += spCardBox("pictureB");
+      html += spRecControls();
+      return html;
+    }
+    // review
+    html += '<div class="card result-hero"><div class="msg">おつかれさま！ 🎉</div>' +
+      '<p class="note">自分の声をきいて、もはん解答とくらべてみよう。じぶんで◎○△をつけてね。</p></div>';
+    var conf = aiConf();
+    if (conf) {
+      html += '<div class="card ai-box"><h2>🤖 AIせんせいに聞いてもらう</h2>';
+      var st = sp.ai && sp.ai.state;
+      if (!st) {
+        html += '<p class="ai-note">録音した声をAIせんせいが聞いて、発音や答え方のアドバイスをくれるよ。</p>' +
+          '<button class="btn primary block" data-action="sp-ai">アドバイスをもらう</button>';
+      } else if (st === "loading") {
+        html += '<p class="ai-note">AIせんせいが聞いています… ちょっと待ってね ⏳</p>';
+      } else if (st === "error") {
+        html += '<p class="ai-note ai-error">' + esc(sp.ai.error || "") + "</p>" +
+          '<button class="btn primary block" data-action="sp-ai">もういちど試す</button>';
+      } else {
+        html += '<div class="ai-result">' + renderAiText(sp.ai.text) + "</div>";
+      }
+      html += "</div>";
+    }
+    spItems().forEach(function (it) {
+      var rec = sp.recs[it.key];
+      var g = sp.grades[it.key];
+      html += '<div class="card sp-review-item"><h2>' + esc(it.label) + "</h2>" +
+        '<p class="sp-qtext">' + esc(it.question) + "</p>" +
+        '<p class="sp-model"><b>もはん解答:</b> ' + esc(it.model) + "</p>" +
+        '<div class="sp-rec-row">' +
+        (rec ? '<button class="btn ghost" data-action="sp-rec-play" data-key="' + it.key + '">▶ 自分の声</button>'
+             : '<span class="note">（録音なし）</span>') +
+        "</div>" +
+        '<div class="self-grade sp-grade">' +
+        [["2", "◎ できた"], ["1", "○ だいたい"], ["0", "△ むずかしい"]].map(function (pair) {
+          var sel = g != null && String(g) === pair[0] ? " selected" : "";
+          return '<button class="g' + pair[0] + sel + '" data-action="sp-grade" data-key="' + it.key +
+            '" data-g="' + pair[0] + '">' + pair[1] + "</button>";
+        }).join("") +
+        "</div></div>";
+    });
+    html += '<button class="btn primary block" data-action="sp-finish">きろくしておわる 🏁</button>';
+    return html;
+  }
+
   function nextQuestion() {
     var s = state.session;
     stopSpeaking();
@@ -759,9 +1285,17 @@
     getRecords(userId).forEach(function (rec) {
       rec.details.forEach(function (d) {
         var hit = QINDEX[d.qid];
-        if (!hit) return;
-        var key = hit.section.id;
-        if (!agg[key]) agg[key] = { ok: 0, total: 0, title: hit.section.title };
+        var key, title;
+        if (hit) {
+          key = hit.section.id;
+          title = hit.section.title;
+        } else if (rec.sectionId === "sp") {
+          key = "sp";
+          title = "面接（スピーキング）";
+        } else {
+          return;
+        }
+        if (!agg[key]) agg[key] = { ok: 0, total: 0, title: title };
         agg[key].total++;
         if (d.ok) agg[key].ok++;
       });
@@ -799,6 +1333,8 @@
         break;
       case "result": app.innerHTML = viewResult(); break;
       case "records": app.innerHTML = viewRecords(); break;
+      case "spSelect": app.innerHTML = viewSpSelect(); break;
+      case "spFlow": app.innerHTML = viewSpFlow(); break;
     }
     window.scrollTo(0, 0);
   }
@@ -890,7 +1426,9 @@
       }
       var limit = TIME_LIMITS[sec.id];
       var meta;
-      if (isMix) {
+      if (sec.kind === "speaking") {
+        meta = "カード" + (sec.cards || []).length + "まい・マイクで録音";
+      } else if (isMix) {
         var poolTotal = 0;
         EXAMS.forEach(function (ex2) {
           ex2.sections.forEach(function (s2) { if (s2.id === sec.id) poolTotal += s2.questions.length; });
@@ -1115,7 +1653,7 @@
     // セクション別正答率
     var agg = sectionAggregate(state.userId);
     html += '<div class="card"><h2>セクション別の正答率（これまで全部）</h2><div class="record-summary">';
-    ["w1", "w2", "w3", "w4", "w5", "w6", "l1", "l2", "l3"].forEach(function (key) {
+    ["w1", "w2", "w3", "w4", "w5", "w6", "l1", "l2", "l3", "sp"].forEach(function (key) {
       var a = agg[key];
       if (!a) return;
       var pct = Math.round(100 * a.ok / a.total);
@@ -1259,6 +1797,47 @@
       case "ai-review": onAiReview(); break;
       case "self-grade": onSelfGrade(parseInt(t.getAttribute("data-g"), 10)); break;
       case "next": nextQuestion(); break;
+
+      // --- 面接（スピーキング） ---
+      case "sp-sample":
+        if (state.playing) { stopSpeaking(); render(); }
+        else { spPlay(spSection().sample_audio, null, function () { render(); }); render(); }
+        break;
+      case "sp-sample-script":
+        state.sp.showSample = !state.sp.showSample;
+        render();
+        break;
+      case "sp-card": spStartCard(t.getAttribute("data-card")); break;
+      case "sp-begin": spBegin(); break;
+      case "sp-skip-silent":
+        stopSpeaking();
+        spStartSilent();
+        break;
+      case "sp-skip-silent2": spEndSilent(); break;
+      case "sp-play":
+        spPlay(t.getAttribute("data-rel"), t.getAttribute("data-fallback") || null, null);
+        break;
+      case "sp-rec-start": spStartRec(); break;
+      case "sp-rec-stop": spStopRec(); break;
+      case "sp-rec-play": {
+        var spr = state.sp.recs[t.getAttribute("data-key")];
+        if (spr) spPlayBlobUrl(spr.url);
+        break;
+      }
+      case "sp-next": spNext(); break;
+      case "sp-text-toggle": {
+        var spq = state.sp.card.questions[state.sp.qIdx];
+        state.sp.showText[spq.id] = !state.sp.showText[spq.id];
+        render();
+        break;
+      }
+      case "sp-grade":
+        state.sp.grades[t.getAttribute("data-key")] = parseInt(t.getAttribute("data-g"), 10);
+        render();
+        break;
+      case "sp-ai": spAiReview(); break;
+      case "sp-finish": spFinish(); break;
+      case "sp-quit": spQuit(); break;
     }
   });
 
