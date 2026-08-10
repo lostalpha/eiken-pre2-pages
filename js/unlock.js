@@ -42,6 +42,26 @@
     });
   }
 
+  /* リスニング音声（data/audio/**.m4a.enc = IV12バイト+AES-GCM暗号文）を
+     復号して objectURL を返す関数を app.js に提供する */
+  function setupAudioDecrypt(key) {
+    window.EIKEN_AUDIO_DECRYPT = function (url) {
+      return fetch(url)
+        .then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.arrayBuffer();
+        })
+        .then(function (buf) {
+          var bytes = new Uint8Array(buf);
+          return crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: bytes.subarray(0, 12) }, key, bytes.subarray(12));
+        })
+        .then(function (plain) {
+          return URL.createObjectURL(new Blob([plain], { type: "audio/mp4" }));
+        });
+    };
+  }
+
   function launch(data) {
     if (data && !Array.isArray(data)) {
       // 新形式: { exams: [...], config: { geminiKey, ... } }
@@ -79,6 +99,7 @@
             // 成功: 鍵を保存して次回から自動で開く
             return crypto.subtle.exportKey("raw", key).then(function (raw) {
               try { localStorage.setItem(KEY_STORE, bytesToB64(raw)); } catch (e) { /* 保存できなくても続行 */ }
+              setupAudioDecrypt(key);
               launch(data);
             });
           });
@@ -110,8 +131,12 @@
         if (savedKey) {
           // 保存済みの鍵でまず試す（あいことば変更後は失敗するので入力画面へ）
           crypto.subtle.importKey("raw", b64ToBytes(savedKey), { name: "AES-GCM" }, false, ["decrypt"])
-            .then(function (key) { return decryptWith(key, blob); })
-            .then(launch)
+            .then(function (key) {
+              return decryptWith(key, blob).then(function (data) {
+                setupAudioDecrypt(key);
+                launch(data);
+              });
+            })
             .catch(function () {
               try { localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ }
               showForm(blob, null);

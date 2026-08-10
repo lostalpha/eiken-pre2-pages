@@ -58,6 +58,19 @@
   function examId(ex) { return ex.exam.id || (ex.exam.year + "-" + ex.exam.session); }
   function examLabel(ex) { return ex.exam.label || (ex.exam.year + "年度 第" + ex.exam.session + "回"); }
 
+  // 問題の出典情報。label があるものはオリジナル教材（ドリル）、無いものは過去問
+  function sourceInfo(qid) {
+    var hit = QINDEX[qid];
+    if (!hit) return null;
+    var ex = hit.exam;
+    var original = !!ex.label;
+    return {
+      original: original,
+      short: original ? ex.label + "（オリジナル）" : ex.year + "年度 第" + ex.session + "回 過去問",
+      full: ex.source || ""
+    };
+  }
+
   // ---------- ストレージ ----------
   function load(key, fallback) {
     try {
@@ -279,10 +292,78 @@
   function stopSpeaking() {
     if (ttsOk) window.speechSynthesis.cancel();
     ttsQueue = [];
+    stopRealAudio();
     state.playing = false;
   }
 
   if (ttsOk) window.speechSynthesis.getVoices(); // 音声リストの先読み
+
+  // ---------- 実音声プレーヤー（過去問の実際の試験音源） ----------
+  // q.audio に "audio/<examId>/<sec>-<no>.m4a" が入っている問題は実音声を再生する。
+  // ローカル版は data/ 直下のファイルをそのまま、公開版は .enc を復号
+  // （unlock.js が window.EIKEN_AUDIO_DECRYPT を提供）して objectURL で再生する。
+  var audioEl = new Audio();
+  audioEl.preload = "auto";
+  var audioUrlCache = {}; // q.audio -> Promise<objectURL or path>
+
+  function resolveAudioUrl(rel) {
+    if (!audioUrlCache[rel]) {
+      audioUrlCache[rel] = window.EIKEN_AUDIO_DECRYPT
+        ? window.EIKEN_AUDIO_DECRYPT("data/" + rel + ".enc")
+        : Promise.resolve("data/" + rel);
+      audioUrlCache[rel].catch(function () { delete audioUrlCache[rel]; });
+    }
+    return audioUrlCache[rel];
+  }
+
+  function prefetchAudio(entry) {
+    // 復号は時間がかかるので、問題表示の時点で裏で進めておく
+    if (entry && entry.q.audio) resolveAudioUrl(entry.q.audio).catch(function () {});
+  }
+
+  function stopRealAudio() {
+    audioEl.onended = null;
+    audioEl.onerror = null;
+    if (!audioEl.paused) audioEl.pause();
+    audioEl.removeAttribute("src");
+  }
+
+  function playRealAudio(entry, onDone) {
+    stopSpeaking();
+    state.playing = true;
+    var token = {};
+    state.playToken = token;
+    resolveAudioUrl(entry.q.audio)
+      .then(function (url) {
+        if (state.playToken !== token || !state.playing) return; // 再生前に停止された
+        audioEl.src = url;
+        audioEl.currentTime = 0;
+        audioEl.onended = function () { state.playing = false; if (onDone) onDone(); };
+        audioEl.onerror = function () {
+          state.playing = false;
+          speakScript(entry.q.prompt, onDone); // 再生失敗時は読み上げで代用
+        };
+        var p = audioEl.play();
+        if (p && p.catch) {
+          p.catch(function () {
+            if (state.playToken !== token) return;
+            state.playing = false;
+            speakScript(entry.q.prompt, onDone);
+          });
+        }
+      })
+      .catch(function () {
+        if (state.playToken !== token) return;
+        state.playing = false;
+        speakScript(entry.q.prompt, onDone); // 取得・復号失敗時は読み上げで代用
+      });
+  }
+
+  // 実音声かTTSかを吸収して1問ぶん再生する
+  function playQuestion(entry, onDone) {
+    if (entry.q.audio) playRealAudio(entry, onDone);
+    else speakScript(entry.q.prompt, onDone);
+  }
 
   // ---------- タイマー ----------
   var timerHandle = null;
@@ -708,7 +789,14 @@
       case "users": app.innerHTML = viewUsers(); break;
       case "addUser": app.innerHTML = viewAddUser(); break;
       case "home": app.innerHTML = viewHome(); break;
-      case "quiz": app.innerHTML = viewQuiz(); break;
+      case "quiz":
+        app.innerHTML = viewQuiz();
+        // いま出ている問題と次の問題の音声を先読み（公開版は復号に時間がかかるため）
+        if (state.session) {
+          prefetchAudio(state.session.entries[state.session.idx]);
+          prefetchAudio(state.session.entries[state.session.idx + 1]);
+        }
+        break;
       case "result": app.innerHTML = viewResult(); break;
       case "records": app.innerHTML = viewRecords(); break;
     }
@@ -862,15 +950,18 @@
 
     // 問題文
     html += '<div class="question-box">';
+    var src = sourceInfo(q.id);
+    if (src) html += '<div class="q-source">' + (src.original ? "✏️" : "📚") + " " + esc(src.short) + "</div>";
     if (entry.instruction) html += '<div class="q-instruction">' + esc(entry.instruction) + "</div>";
     // 空所が複数ある問題は、どの空所に答えるかを明示
     if (targetBlank && (promptBlanks.length > 1 || (passage && blankNumbers(passage.body).length > 1))) {
       html += '<div class="blank-chip">（ ' + targetBlank + " ）に入るものをえらぼう</div>";
     }
     if (listening && !entry.done) {
+      var canPlay = !!q.audio || ttsOk;
       html += '<div class="listen-panel">' +
-        '<div class="listen-note">' + (ttsOk ? "▶ をおして、音声をきいてからこたえよう（もういちど聞ける）" : "このブラウザは音声に対応していません。スクリプトを読んでこたえよう。") + "</div>";
-      if (ttsOk) {
+        '<div class="listen-note">' + (canPlay ? "▶ をおして、音声をきいてからこたえよう（もういちど聞ける）" : "このブラウザは音声に対応していません。スクリプトを読んでこたえよう。") + "</div>";
+      if (canPlay) {
         html += '<button class="play-btn' + (state.playing ? " playing" : "") + '" data-action="play-audio">' +
           (state.playing ? "⏸ ていし" : entry.audioDone ? "▶ もういちど聞く" : "▶ 音声をきく") + "</button>";
       } else {
@@ -922,6 +1013,8 @@
       if (q.rubric) html += "<h4>ポイント</h4><p>" + esc(q.rubric) + "</p>";
       if (q.translation) html += "<h4>和訳</h4><p>" + esc(q.translation) + "</p>";
       if (q.explanation) html += "<h4>解説</h4><p>" + esc(q.explanation) + "</p>";
+      var src = sourceInfo(q.id);
+      if (src && src.full) html += '<div class="q-source-full">出典: ' + esc(src.full) + "</div>";
       html += "</div>";
       html += viewAiSection(entry);
       if (entry.selfGrade === null) {
@@ -958,6 +1051,8 @@
       });
       html += "</div>";
     }
+    var src = sourceInfo(q.id);
+    if (src && src.full) html += '<div class="q-source-full">出典: ' + esc(src.full) + "</div>";
     html += "</div>" + nextBar();
     return html;
   }
@@ -989,8 +1084,10 @@
     rec.details.forEach(function (d, i) {
       var hit = QINDEX[d.qid];
       var text = hit ? (hit.q.prompt || "").replace(/\s+/g, " ").slice(0, 40) : d.qid;
+      var src = sourceInfo(d.qid);
       html += '<div class="review-item"><span class="mark ' + (d.ok ? "ok\">⭕" : "ng\">❌") + "</span>" +
-        "<span>" + (i + 1) + ".</span><span class=\"txt\">" + esc(text) + "</span></div>";
+        "<span>" + (i + 1) + ".</span><span class=\"txt\">" + esc(text) + "</span>" +
+        (src ? '<span class="rv-src">' + esc(src.short) + "</span>" : "") + "</div>";
     });
     html += "</div></div>";
 
@@ -1138,8 +1235,7 @@
           stopSpeaking();
           render();
         } else {
-          render(); // ボタン表示更新用に先に描画
-          speakScript(e2.q.prompt, function () {
+          playQuestion(e2, function () {
             e2.audioDone = true;
             e2.waitAudio = false;
             var s2 = state.session;
