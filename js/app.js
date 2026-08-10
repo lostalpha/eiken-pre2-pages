@@ -520,6 +520,48 @@
     startQuestionTimer();
   }
 
+  // 長文の内容一致（w4）ミックス: 大問（パッセージ）を丸ごと1つ、設問は本文の順番どおりに出題
+  function startMixPassageSection(sectionId) {
+    var groups = [];
+    EXAMS.forEach(function (ex) {
+      ex.sections.forEach(function (sec) {
+        if (sec.id !== sectionId) return;
+        var byPassage = {};
+        var order = [];
+        sec.questions.forEach(function (q) {
+          var key = q.passage_id || (examId(ex) + "-" + q.id);
+          if (!byPassage[key]) { byPassage[key] = []; order.push(key); }
+          byPassage[key].push({ q: q, sectionId: sec.id, instruction: sec.instruction });
+        });
+        order.forEach(function (k) { groups.push(byPassage[k]); });
+      });
+    });
+    if (!groups.length) return;
+
+    // これまでの出題回数が少ない大問を優先（同回数はランダム）
+    var seen = {};
+    getRecords(state.userId).forEach(function (rec) {
+      rec.details.forEach(function (d) { seen[d.qid] = (seen[d.qid] || 0) + 1; });
+    });
+    shuffle(groups);
+    groups.sort(function (a, b) {
+      var avg = function (g) {
+        return g.reduce(function (s, r) { return s + (seen[r.q.id] || 0); }, 0) / g.length;
+      };
+      return avg(a) - avg(b);
+    });
+
+    var refs = groups[0];
+    var title = "";
+    mixBaseExam().sections.forEach(function (sec2) {
+      if (sec2.id === sectionId) title = sec2.title;
+    });
+    state.session = buildSession("mix", sectionId, refs, "全回ミックス " + title);
+    state.screen = "quiz";
+    render();
+    startQuestionTimer();
+  }
+
   function shuffle(arr) {
     for (var i = arr.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1));
@@ -1548,6 +1590,15 @@
       var meta;
       if (sec.kind === "speaking") {
         meta = "カード" + (sec.cards || []).length + "まい・マイクで録音";
+      } else if (isMix && sec.id === "w4") {
+        var passSet = {};
+        EXAMS.forEach(function (ex2) {
+          ex2.sections.forEach(function (s2) {
+            if (s2.id !== "w4") return;
+            s2.questions.forEach(function (q) { if (q.passage_id) passSet[q.passage_id] = true; });
+          });
+        });
+        meta = "全" + Object.keys(passSet).length + "大問から1つ・設問は順番どおり";
       } else if (isMix) {
         var poolTotal = 0;
         EXAMS.forEach(function (ex2) {
@@ -1938,6 +1989,8 @@
           state.sp = { exIdx: -1 }; // 全回のカードから選ぶ
           state.screen = "spSelect";
           render();
+        } else if (state.examIdx === -1 && secId0 === "w4") {
+          startMixPassageSection(secId0); // 長文は大問丸ごと
         } else if (state.examIdx === -1) {
           startMixSection(secId0);
         } else {
