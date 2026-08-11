@@ -356,7 +356,16 @@
 
   function prefetchAudio(entry) {
     // 復号は時間がかかるので、問題表示の時点で裏で進めておく
-    if (entry && entry.q.audio) resolveAudioUrl(entry.q.audio).catch(function () {});
+    if (!entry) return;
+    if (entry.q.audio) resolveAudioUrl(entry.q.audio).catch(function () {});
+    var tts = entry.q.tts;
+    if (tts) {
+      var rels = [tts.q, tts.a];
+      for (var k in (tts.c || {})) rels.push(tts.c[k]);
+      rels.forEach(function (rel) {
+        if (rel) resolveAudioUrl(rel).catch(function () {});
+      });
+    }
   }
 
   function stopRealAudio() {
@@ -1733,6 +1742,20 @@
       html += "</div>";
     } else if (!listening) {
       html += '<div class="q-prompt">' + highlightBlank(esc(q.prompt), targetBlank) + "</div>";
+      // 語彙・文法問題のTTS音声（解答前=空所ポーズ入り、解答後=正解入り完成文）
+      if (q.tts) {
+        var ttsRel = entry.done && q.tts.a ? q.tts.a : q.tts.q;
+        if (ttsRel) {
+          var ttsFb = q.prompt;
+          if (entry.done && q.tts.a) {
+            var ansC = (q.choices || []).filter(function (c) { return c.label === q.answer; })[0];
+            if (ansC) ttsFb = q.prompt.replace(/\(\s*\d*\s*\)/, " " + ansC.text + " ");
+          }
+          html += '<button class="tts-btn" data-action="tts-play" data-rel="' + esc(ttsRel) +
+            '" data-fallback="' + esc(ttsFb) + '">' +
+            (entry.done && q.tts.a ? "🔊 正解の英文をきく" : "🔊 英文をきく") + "</button>";
+        }
+      }
     } else {
       html += '<div class="q-prompt" style="color:var(--sub);font-size:13px">（スクリプトは下の解説にあります）</div>';
     }
@@ -1753,9 +1776,15 @@
           if (c.label === q.answer) cls += " correct";
           else if (c.label === entry.picked) cls += " wrong";
         }
+        // 選択肢の発音ボタン（解答前のみ。解答後は下の「選択肢のかくにん」に付く）
+        var spk = "";
+        if (!entry.done && !hideChoiceText && q.tts && q.tts.c && q.tts.c[c.label]) {
+          spk = '<span class="spk" data-action="tts-play" data-rel="' + esc(q.tts.c[c.label]) +
+            '" data-fallback="' + esc(c.text) + '">🔊</span>';
+        }
         html += '<button class="' + cls + '" data-action="choose" data-label="' + esc(c.label) + '"' +
           (entry.done ? " disabled" : "") + '><span class="label">' + esc(c.label) + "</span>" +
-          (hideChoiceText ? "" : "<span>" + esc(c.text) + "</span>") + "</button>";
+          (hideChoiceText ? "" : "<span>" + esc(c.text) + "</span>") + spk + "</button>";
       });
       html += "</div>";
       if (entry.done) html += viewFeedback(entry, listening);
@@ -1818,7 +1847,10 @@
         html += '<div class="choice-note' + (isAns ? " is-answer" : "") + '">' +
           '<span class="cn-label">' + esc(c.label) + "</span>" +
           '<div class="cn-body">' +
-          '<div class="cn-text">' + esc(c.text) + "</div>" +
+          '<div class="cn-text">' + esc(c.text) +
+          (q.tts && q.tts.c && q.tts.c[c.label]
+            ? ' <span class="spk" data-action="tts-play" data-rel="' + esc(q.tts.c[c.label]) +
+              '" data-fallback="' + esc(c.text) + '">🔊</span>' : "") + "</div>" +
           (tr ? '<div class="cn-tr">' + esc(tr) + "</div>" : "") +
           (isAns ? '<div class="cn-why ok">⭕ これが正解</div>'
                  : note ? '<div class="cn-why">' + esc(note) + "</div>" : "") +
@@ -1939,7 +1971,7 @@
     var action = t.getAttribute("data-action");
 
     // 音声再生につながる操作はタップ中に audioEl の再生許可を取る（iOS対策）
-    if (/^(play-audio|sp-begin|sp-skip-silent|sp-skip-silent2|sp-next|sp-play|sp-sample|sp-rec-play|sp-card|start-section|next)$/.test(action)) {
+    if (/^(play-audio|tts-play|sp-begin|sp-skip-silent|sp-skip-silent2|sp-next|sp-play|sp-sample|sp-rec-play|sp-card|start-section|next)$/.test(action)) {
       unlockAudioEl();
     }
 
@@ -2091,6 +2123,19 @@
       case "sp-play":
         spPlay(t.getAttribute("data-rel"), t.getAttribute("data-fallback") || null, null);
         break;
+      case "tts-play": {
+        // 同じ音声の再生中にもう一度おしたら停止
+        var ttsRel2 = t.getAttribute("data-rel");
+        if (state.playing && state.ttsRel === ttsRel2) {
+          stopSpeaking();
+          state.ttsRel = null;
+          break;
+        }
+        state.ttsRel = ttsRel2;
+        spPlay(ttsRel2, t.getAttribute("data-fallback") || null,
+          function () { state.ttsRel = null; });
+        break;
+      }
       case "sp-rec-start": spStartRec(); break;
       case "sp-rec-stop": spStopRec(); break;
       case "sp-rec-play": {
