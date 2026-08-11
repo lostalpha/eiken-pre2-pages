@@ -328,6 +328,22 @@
   audioEl.preload = "auto";
   var audioUrlCache = {}; // q.audio -> Promise<objectURL or path>
 
+  // iOS Safariは「ユーザーのタップ中に再生を始めた要素」しか後から鳴らせない。
+  // 実音声は復号（非同期）のあとに play() するためタップ扱いにならず初回が無音になる。
+  // 対策: タップの瞬間に無音を鳴らして audioEl の再生許可を取っておく。
+  var audioUnlocked = false;
+  var SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  function unlockAudioEl() {
+    if (audioUnlocked) return;
+    audioEl.src = SILENT_WAV;
+    var p = audioEl.play();
+    if (p && p.then) {
+      p.then(function () { audioUnlocked = true; }).catch(function () {});
+    } else {
+      audioUnlocked = true; // 古いブラウザはPromiseを返さない＝制限もない
+    }
+  }
+
   function resolveAudioUrl(rel) {
     if (!audioUrlCache[rel]) {
       audioUrlCache[rel] = window.EIKEN_AUDIO_DECRYPT
@@ -367,7 +383,7 @@
         };
         var p = audioEl.play();
         if (p && p.catch) {
-          p.catch(function () {
+          p.then(function () { audioUnlocked = true; }).catch(function () {
             if (state.playToken !== token) return;
             state.playing = false;
             speakScript(entry.q.prompt, onDone);
@@ -802,7 +818,7 @@
         audioEl.onended = function () { state.playing = false; if (onDone) onDone(); };
         audioEl.onerror = fail;
         var p = audioEl.play();
-        if (p && p.catch) p.catch(fail);
+        if (p && p.catch) p.then(function () { audioUnlocked = true; }).catch(fail);
       })
       .catch(fail);
   }
@@ -833,6 +849,10 @@
     state.sp.ai = null;
     state.sp.recording = null;
     state.screen = "spFlow";
+    // 音声を先に復号しておく（再生タップから音が出るまでの待ちを減らす）
+    var a = card.audio || {};
+    Object.keys(a).forEach(function (k) { if (a[k]) resolveAudioUrl(a[k]).catch(function () {}); });
+    (card.questions || []).forEach(function (q) { if (q.audio) resolveAudioUrl(q.audio).catch(function () {}); });
     render();
   }
 
@@ -1917,6 +1937,11 @@
     var t = ev.target.closest("[data-action]");
     if (!t) return;
     var action = t.getAttribute("data-action");
+
+    // 音声再生につながる操作はタップ中に audioEl の再生許可を取る（iOS対策）
+    if (/^(play-audio|sp-begin|sp-skip-silent|sp-skip-silent2|sp-next|sp-play|sp-sample|sp-rec-play|sp-card|start-section|next)$/.test(action)) {
+      unlockAudioEl();
+    }
 
     switch (action) {
       case "pick-user":

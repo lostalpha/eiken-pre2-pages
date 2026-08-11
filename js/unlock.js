@@ -42,8 +42,27 @@
     });
   }
 
-  /* リスニング音声（data/audio/**.m4a.enc = IV12バイト+AES-GCM暗号文）を
-     復号して objectURL を返す関数を app.js に提供する */
+  /* 暗号化アセット（data/ 以下の .enc = IV12バイト+AES-GCM暗号文）を
+     復号して objectURL を返す関数を app.js に提供する。
+     Blob の MIME を拡張子から正しく付けること（Safari は <img> に
+     audio/mp4 の blob を渡すと表示しない） */
+  var ENC_MIME = {
+    ".m4a.enc": "audio/mp4",
+    ".mp3.enc": "audio/mpeg",
+    ".jpg.enc": "image/jpeg",
+    ".jpeg.enc": "image/jpeg",
+    ".png.enc": "image/png",
+    ".webp.enc": "image/webp",
+    ".svg.enc": "image/svg+xml"
+  };
+  function encMime(url) {
+    var path = url.split("?")[0].toLowerCase();
+    for (var ext in ENC_MIME) {
+      if (path.slice(-ext.length) === ext) return ENC_MIME[ext];
+    }
+    return "application/octet-stream";
+  }
+
   function setupAudioDecrypt(key) {
     window.EIKEN_AUDIO_DECRYPT = function (url) {
       return fetch(url)
@@ -57,7 +76,7 @@
             { name: "AES-GCM", iv: bytes.subarray(0, 12) }, key, bytes.subarray(12));
         })
         .then(function (plain) {
-          return URL.createObjectURL(new Blob([plain], { type: "audio/mp4" }));
+          return URL.createObjectURL(new Blob([plain], { type: encMime(url) }));
         });
     };
   }
