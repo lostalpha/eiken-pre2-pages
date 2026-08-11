@@ -13,9 +13,9 @@
     w4: 180,  // 長文内容一致 7問 ≒20分
     w5: 900,  // Eメール 15分
     w6: 1200, // 意見論述 20分
-    l1: 60,   // リスニングは音声終了後にカウント開始
-    l2: 60,
-    l3: 60
+    l1: 10,   // リスニングは音声終了後にカウント開始。実試験の解答時間は各問10秒
+    l2: 10,
+    l3: 10
   };
 
   var SECTION_ICONS = {
@@ -443,7 +443,7 @@
     if (node) {
       if (remain >= 0) {
         node.textContent = "⏱ " + fmtTime(remain);
-        node.className = "timer" + (remain <= 10 ? " low" : "");
+        node.className = "timer" + (remain <= Math.min(10, entry.limit * 0.3) ? " low" : "");
       } else {
         node.textContent = "⏱ +" + fmtTime(-remain);
         node.className = "timer over";
