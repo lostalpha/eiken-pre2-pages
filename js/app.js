@@ -625,6 +625,8 @@
     var entry = currentEntry();
     if (entry.done) return;
     finishEntry(entry, label === entry.q.answer, label, false);
+    // 長文問題は答えたあとも設問の位置にとどまる（本文の先頭に戻さない）
+    if (entry.q.passage_id) state.focusQuestion = true;
     render();
   }
 
@@ -1373,7 +1375,10 @@
     var s = state.session;
     stopSpeaking();
     if (s.idx + 1 < s.entries.length) {
+      var prevPid = s.entries[s.idx].q.passage_id;
       s.idx++;
+      // 同じ長文の続きの設問は、本文をもう一度スクロールしなくていいように設問へ送る
+      if (prevPid && s.entries[s.idx].q.passage_id === prevPid) state.focusQuestion = true;
       render();
       startQuestionTimer();
     } else {
@@ -1512,7 +1517,15 @@
         hydrateImages();
         break;
     }
-    window.scrollTo(0, 0);
+    // 通常は先頭へ。長文の続きの設問だけ、本文をとばして設問の位置へ
+    var focusQ = state.focusQuestion;
+    state.focusQuestion = false;
+    var qBox = focusQ ? app.querySelector(".question-box") : null;
+    if (qBox) {
+      window.scrollTo(0, Math.max(0, qBox.getBoundingClientRect().top + window.pageYOffset - 12));
+    } else {
+      window.scrollTo(0, 0);
+    }
   }
 
   // --- ユーザー選択 ---

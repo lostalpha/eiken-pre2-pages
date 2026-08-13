@@ -171,7 +171,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   padding: 16px; margin-bottom: 14px; font-size: 15px;
 }
 .passage-box .p-title { font-weight: 700; margin-bottom: 8px; font-size: 15px; }
-.passage-box .p-body { white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+/* 本文は全文表示（ページ全体のスクロールのみ。ボックス内スクロールにすると二重スクロールになる） */
+.passage-box .p-body { white-space: pre-wrap; }
 .passage-toggle { color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 8px; }
 
 .question-box {
